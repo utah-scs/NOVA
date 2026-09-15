@@ -42,6 +42,8 @@ static const int kDefaultPort = 0x02912;  // 10514 in decimal
 static const char *kDefaultBindAddr = "127.0.0.1";
 
 // TODO(barath): Rename these flags to something more intuitive.
+DEFINE_string(file_prefix, "rte", "File prefix for the hugepage files");
+DEFINE_string(proc_type, "auto", "Process type (primary, secondary or auto)");
 DEFINE_bool(t, false, "Dump the size of internal data structures");
 DEFINE_string(i, "/var/run/bessd.pid", "Specifies where to write the pidfile");
 DEFINE_bool(f, false, "Run BESS in foreground mode (for developers)");

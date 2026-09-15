@@ -29,6 +29,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #include "dpdk.h"
+#include "opts.h"
 
 #include <syslog.h>
 #include <unistd.h>
@@ -118,14 +119,24 @@ void init_eal(int dpdk_mb_per_socket, std::string nonworker_corelist) {
       std::to_string(RTE_MAX_LCORE - 1) + "@" + nonworker_corelist,
       // Do not bother with /var/run/.rte_config and .rte_hugepage_info,
       // since we don't want to interfere with other DPDK applications.
-      "--no-shconf",
+      // NOTE: commented out because it also disables the shared-config file
+      // --proc-type=auto relies on to detect an existing primary, which
+      // multi-process (primary/secondary) bessd setups need.
+      //"--no-shconf",
       // TODO(sangjin) switch to dynamic memory mode
       "--legacy-mem",
+      "--proc-type",
+      //"auto",
+      FLAGS_proc_type,
+      "--file-prefix",
+      FLAGS_file_prefix,
+      //"--huge-dir",
+      //"/mnt/huge",
   };
 
   if (dpdk_mb_per_socket <= 0) {
-    rte_args.Append({"--iova-mode", (FLAGS_iova != "") ? FLAGS_iova : "va"});
-    rte_args.Append({"--no-huge"});
+    rte_args.Append({"--iova", (FLAGS_iova != "") ? FLAGS_iova : "va"});
+    //rte_args.Append({"--no-huge"});
 
     // even if we opt out of using hugepages, many DPDK libraries still rely on
     // rte_malloc (e.g., rte_lpm), so we need to reserve some (normal page)
@@ -143,7 +154,11 @@ void init_eal(int dpdk_mb_per_socket, std::string nonworker_corelist) {
 
     // Unlink mapped hugepage files so that memory can be reclaimed as soon as
     // bessd terminates.
-    rte_args.Append({"--huge-unlink", "always"});
+    // NOTE: commented out because a secondary process needs to open() the
+    // primary's hugepage file by path to attach to it; unlinking it removes
+    // that path as soon as the primary maps it, so secondaries fail with
+    // ENOMEM ("Cannot init memory").
+    //rte_args.Append({"--huge-unlink", "always"});
   }
 
   // reset getopt()

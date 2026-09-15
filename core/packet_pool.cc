@@ -1,6 +1,7 @@
 #include "packet_pool.h"
 
 #include <sys/mman.h>
+#include <unistd.h>
 
 #include <rte_errno.h>
 #include <rte_mempool.h>
@@ -64,8 +65,13 @@ PacketPool::PacketPool(size_t capacity, int socket_id) {
     InitDpdk(0);
   }
 
+  // Multiple bessd processes can share one DPDK multi-process domain (a
+  // primary plus one or more secondaries with a matching --file-prefix), in
+  // which case mempool names live in that shared namespace. Mix in our own
+  // pid so pool names don't collide with another process's "PacketPool0".
   static int next_id_;
-  name_ = "PacketPool" + std::to_string(next_id_++);
+  name_ = "PacketPool" + std::to_string(getpid()) + "_" +
+          std::to_string(next_id_++);
 
   LOG(INFO) << name_ << " requests for " << capacity << " packets";
 

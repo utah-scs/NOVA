@@ -681,10 +681,15 @@ def _do_start(cli, opts):
         opts = []
 
     # need -E to pass GCOV_* env variables through
-    cmd = 'sudo -E %s/core/bessd -k %s' % (os.path.dirname(cli.this_dir),
+    cmd = 'sudo -E %s/core/bessd %s' % (os.path.dirname(cli.this_dir),
                                            ' '.join(opts))
 
-    cli.bess.disconnect()
+    grpc_url = ''
+    try:
+        grpc_url = opts[1]
+    except IndexError:
+        pass
+    # cli.bess.disconnect()
 
     try:
         ret = os.system('sudo -n echo -n 2> /dev/null')
@@ -699,7 +704,10 @@ def _do_start(cli, opts):
         start = time.time()
         while time.time() - start < 3:
             try:
-                cli.bess.connect()
+                if grpc_url:
+                    cli.bess.connect(grpc_url=grpc_url)
+                else: 
+                    cli.bess.connect()
                 break
             except cli.bess.RPCError:
                 # bessd is on, but its gRPC server may be not yet. Retry.
@@ -713,25 +721,26 @@ def _do_start(cli, opts):
 
 @cmd('daemon start [BESSD_OPTS...]', 'Start BESS daemon in the local machine')
 def daemon_start(cli, opts):
-    daemon_exists = False
+    # daemon_exists = False
 
-    try:
-        with open('/var/run/bessd.pid', 'r') as f:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
-            except IOError as e:
-                if e.errno in [errno.EAGAIN, errno.EACCES]:
-                    daemon_exists = True
-                else:
-                    raise
-    except IOError as e:
-        if e.errno != errno.ENOENT:
-            raise
+    # try:
+        # with open('/var/run/bessd.pid', 'r') as f:
+            # try:
+                # fcntl.flock(f.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            # except IOError as e:
+                # if e.errno in [errno.EAGAIN, errno.EACCES]:
+                    # daemon_exists = True
+                # else:
+                    # raise
+    # except IOError as e:
+        # if e.errno != errno.ENOENT:
+            # raise
 
-    if daemon_exists:
-        warn(cli, 'Existing BESS daemon will be killed.', _do_start, opts)
-    else:
-        _do_start(cli, opts)
+    # if daemon_exists:
+        # warn(cli, 'Existing BESS daemon will be killed.', _do_start, opts)
+    # else:
+        # _do_start(cli, opts)
+    _do_start(cli, opts)
 
 
 def is_pipeline_empty(cli):

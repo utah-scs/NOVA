@@ -1,0 +1,70 @@
+# BESS configuration file for tenant scaling experiemnt
+# in iPipe model
+#
+# This config file will run one function in a specific cpu core
+#
+# Same pmd port will be used in all of the instances, only queues will be different
+# based on the core id
+
+import scapy.all as scapy
+import socket
+import os
+import time
+
+# PMD port ID
+PMD_PORT_ID = 6
+
+# Numbers of queue to use
+NUM_QUEUES = int(os.environ['num_queues'])
+
+# CPU core to use
+CPU_ID = int(os.environ['cpu_id'])
+
+# Queue number
+Q_ID= int(os.environ['q_id'])
+
+# PCI address of the NIC
+PCI_ADDR = '03:00.0'
+
+# Memory access type:
+#   0: Local memory access
+#   1: DMA from host
+MEM_TYPE = 0
+
+# Data structure type:
+# plain: No data structure
+# llist: Linked list
+STRUCTURE='plain'
+
+bess.add_worker(CPU_ID, CPU_ID)
+
+pmdport::PMDPort(port_id=PMD_PORT_ID, num_inc_q=NUM_QUEUES, num_out_q=NUM_QUEUES)
+
+# Create 8 rx queues for each core
+queue_out = QueueOut(port=pmdport, qid=Q_ID)
+    
+# Create 8 tx queues for each core
+queue_inc = QueueInc(port=pmdport, qid=Q_ID)
+queue_inc.attach_task(wid=CPU_ID)
+
+
+# Match UDP destination ports
+# Different port number is for different functions
+em = ExactMatch(fields=[{'offset':36, 'num_bytes':2}])
+em.add(fields=[{'value_int':socket.htons(10002)}], gate=0)
+em.set_default_gate(gate=1)
+queue_inc -> em
+
+bpf_obj=[{'bpf_file_path':os.environ['bpf_obj'], 'id':0}]
+
+# Create UBPF and DMA pipeline
+if os.environ['enable_jit'] == "True":
+  ubpf = UBPF(functions=bpf_obj, bpf_enable_jit=True)
+else:
+  ubpf = UBPF(functions=bpf_obj, bpf_enable_jit=False)
+
+dma = DMA(id = 1, size = 1024, memtype = MEM_TYPE, pci_addr=PCI_ADDR, structure=STRUCTURE, init=True)
+
+em:0 -> ubpf
+ubpf:0 -> dma -> ubpf
+ubpf:1 -> queue_out

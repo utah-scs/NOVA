@@ -152,6 +152,13 @@ class PMDPort final : public Port {
   bool hot_plugged_;
 
   /*!
+   * True if this process is the DPDK primary for this port (and thus the one
+   * that configured/started it); false for a secondary process sharing the
+   * port with a primary elsewhere.
+   */
+  bool is_primary_ = true;
+
+  /*!
    * The NUMA node to which device is attached
    */
   placement_constraint node_placement_;

@@ -169,6 +169,9 @@ case "$1" in
   hugepage)
     setup_hugepage
     ;;
+  hugepage)
+    setup_hugepage
+    ;;
   doca)
     install_doca
     ;;

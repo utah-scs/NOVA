@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
   bess::bessd::ProcessCommandLineArgs();
   bess::bessd::CheckRunningAsRoot();
 
-  int pidfile_fd = bess::bessd::CheckUniqueInstance(FLAGS_i);
+  //int pidfile_fd = bess::bessd::CheckUniqueInstance(FLAGS_i);
   ignore_result(bess::bessd::SetResourceLimit());
 
   int signal_fd = -1;
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
   LOG(INFO) << "bessd " << google::VersionString();
 
   // Store our PID (child's, if daemonized) in the PID file.
-  bess::bessd::WritePidfile(pidfile_fd, getpid());
+  //bess::bessd::WritePidfile(pidfile_fd, getpid());
 
   // Load plugins
   if (!bess::bessd::LoadPlugins(FLAGS_modules)) {

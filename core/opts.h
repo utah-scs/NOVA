@@ -33,6 +33,8 @@
 #include <gflags/gflags.h>
 
 // TODO(barath): Rename these flags to something more intuitive.
+DECLARE_string(file_prefix);
+DECLARE_string(proc_type);
 DECLARE_bool(t);
 DECLARE_string(i);
 DECLARE_bool(f);

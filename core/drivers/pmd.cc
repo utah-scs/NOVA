@@ -33,6 +33,7 @@
 #include <rte_bus.h>
 #include <rte_bus_pci.h>
 #include <rte_dev.h>
+#include <rte_eal.h>
 #include <rte_ethdev.h>
 
 #include "../utils/ether.h"
@@ -250,100 +251,114 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     return CommandFailure(ENODEV, "rte_eth_dev_info_get() failed");
   }
 
-  eth_conf = default_eth_conf(dev_info, num_rxq);
-  if (arg.loopback()) {
-    eth_conf.lpbk_mode = 1;
-  }
-	
   if (!(dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)) {
     return CommandFailure(ENOENT, "Port doesn't support HW timestamp");
-	}
-	
-  eth_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_TIMESTAMP;
-	rte_mbuf_dyn_rx_timestamp_register(&hwts_dynfield_offset, NULL);
-	if (hwts_dynfield_offset < 0) {
+  }
+
+  rte_mbuf_dyn_rx_timestamp_register(&hwts_dynfield_offset, NULL);
+  if (hwts_dynfield_offset < 0) {
     return CommandFailure(-rte_errno, "Failed to register timestamp field");
-	}
-
-  ret = rte_eth_dev_configure(ret_port_id, num_rxq, num_txq, &eth_conf);
-  if (ret != 0) {
-    return CommandFailure(-ret, "rte_eth_dev_configure() failed");
   }
 
-  int sid = rte_eth_dev_socket_id(ret_port_id);
-  if (sid < 0 || sid > RTE_MAX_NUMA_NODES) {
-    sid = 0;  // if socket_id is invalid, set to 0
-  }
+  // DPDK only allows the primary process to (re)configure a device and set
+  // up its queues. When multiple bessd processes share this port as a
+  // primary/secondary group (see start_ipipe.sh), every non-primary tenant
+  // must skip configuration entirely and just use the queue(s) the primary
+  // already set up (num_rxq/num_txq is sized for the whole tenant group).
+  is_primary_ = (rte_eal_process_type() == RTE_PROC_PRIMARY);
 
-  eth_rxconf = dev_info.default_rxconf;
-  eth_rxconf.rx_drop_en = 1;
+  if (!is_primary_) {
+    LOG(INFO) << "Secondary process: port " << static_cast<int>(ret_port_id)
+              << " is already configured and started by the primary; "
+                 "skipping configuration.";
+  } else {
+    eth_conf = default_eth_conf(dev_info, num_rxq);
+    if (arg.loopback()) {
+      eth_conf.lpbk_mode = 1;
+    }
+    eth_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_TIMESTAMP;
 
-  if (dev_info.rx_desc_lim.nb_min > 0 &&
-      queue_size[PACKET_DIR_INC] < dev_info.rx_desc_lim.nb_min) {
-    int old_size_rxq = queue_size[PACKET_DIR_INC];
-    queue_size[PACKET_DIR_INC] = dev_info.rx_desc_lim.nb_min;
-    LOG(WARNING) << "resizing RX queue size from " << old_size_rxq << " to "
-                 << queue_size[PACKET_DIR_INC];
-  }
-
-  if (dev_info.rx_desc_lim.nb_max > 0 &&
-      queue_size[PACKET_DIR_INC] > dev_info.rx_desc_lim.nb_max) {
-    int old_size_rxq = queue_size[PACKET_DIR_INC];
-    queue_size[PACKET_DIR_INC] = dev_info.rx_desc_lim.nb_max;
-    LOG(WARNING) << "capping RX queue size from " << old_size_rxq << " to "
-                 << queue_size[PACKET_DIR_INC];
-  }
-
-  for (int i = 0; i < num_rxq; i++) {
-    ret = rte_eth_rx_queue_setup(ret_port_id, i, queue_size[PACKET_DIR_INC],
-                                 sid, &eth_rxconf,
-                                 bess::PacketPool::GetDefaultPool(sid)->pool());
+    ret = rte_eth_dev_configure(ret_port_id, num_rxq, num_txq, &eth_conf);
     if (ret != 0) {
-      return CommandFailure(-ret, "rte_eth_rx_queue_setup() failed");
+      return CommandFailure(-ret, "rte_eth_dev_configure() failed");
+    }
+
+    int sid = rte_eth_dev_socket_id(ret_port_id);
+    if (sid < 0 || sid > RTE_MAX_NUMA_NODES) {
+      sid = 0;  // if socket_id is invalid, set to 0
+    }
+
+    eth_rxconf = dev_info.default_rxconf;
+    eth_rxconf.rx_drop_en = 1;
+
+    if (dev_info.rx_desc_lim.nb_min > 0 &&
+        queue_size[PACKET_DIR_INC] < dev_info.rx_desc_lim.nb_min) {
+      int old_size_rxq = queue_size[PACKET_DIR_INC];
+      queue_size[PACKET_DIR_INC] = dev_info.rx_desc_lim.nb_min;
+      LOG(WARNING) << "resizing RX queue size from " << old_size_rxq << " to "
+                   << queue_size[PACKET_DIR_INC];
+    }
+
+    if (dev_info.rx_desc_lim.nb_max > 0 &&
+        queue_size[PACKET_DIR_INC] > dev_info.rx_desc_lim.nb_max) {
+      int old_size_rxq = queue_size[PACKET_DIR_INC];
+      queue_size[PACKET_DIR_INC] = dev_info.rx_desc_lim.nb_max;
+      LOG(WARNING) << "capping RX queue size from " << old_size_rxq << " to "
+                   << queue_size[PACKET_DIR_INC];
+    }
+
+    for (int i = 0; i < num_rxq; i++) {
+      ret = rte_eth_rx_queue_setup(ret_port_id, i, queue_size[PACKET_DIR_INC],
+                                   sid, &eth_rxconf,
+                                   bess::PacketPool::GetDefaultPool(sid)->pool());
+      if (ret != 0) {
+        return CommandFailure(-ret, "rte_eth_rx_queue_setup() failed");
+      }
+    }
+
+    if (dev_info.tx_desc_lim.nb_min > 0 &&
+        queue_size[PACKET_DIR_OUT] < dev_info.tx_desc_lim.nb_min) {
+      int old_size_txq = queue_size[PACKET_DIR_OUT];
+      queue_size[PACKET_DIR_OUT] = dev_info.tx_desc_lim.nb_min;
+      LOG(WARNING) << "resizing TX queue size from " << old_size_txq << " to "
+                   << queue_size[PACKET_DIR_OUT];
+    }
+
+    if (dev_info.tx_desc_lim.nb_max > 0 &&
+        queue_size[PACKET_DIR_OUT] > dev_info.tx_desc_lim.nb_max) {
+      int old_size_txq = queue_size[PACKET_DIR_OUT];
+      queue_size[PACKET_DIR_OUT] = dev_info.tx_desc_lim.nb_max;
+      LOG(WARNING) << "capping TX queue size from " << old_size_txq << " to "
+                   << queue_size[PACKET_DIR_OUT];
+    }
+
+    for (int i = 0; i < num_txq; i++) {
+      ret = rte_eth_tx_queue_setup(ret_port_id, i, queue_size[PACKET_DIR_OUT],
+                                   sid, nullptr);
+      if (ret != 0) {
+        return CommandFailure(-ret, "rte_eth_tx_queue_setup() failed");
+      }
+    }
+
+    rte_eth_promiscuous_enable(ret_port_id);
+
+    int offload_mask = 0;
+    offload_mask |= arg.vlan_offload_rx_strip() ? RTE_ETH_VLAN_STRIP_OFFLOAD : 0;
+    offload_mask |= arg.vlan_offload_rx_filter() ? RTE_ETH_VLAN_FILTER_OFFLOAD : 0;
+    offload_mask |= arg.vlan_offload_rx_qinq() ? RTE_ETH_VLAN_EXTEND_OFFLOAD : 0;
+    if (offload_mask) {
+      ret = rte_eth_dev_set_vlan_offload(ret_port_id, offload_mask);
+      if (ret != 0) {
+        return CommandFailure(-ret, "rte_eth_dev_set_vlan_offload() failed");
+      }
+    }
+
+    ret = rte_eth_dev_start(ret_port_id);
+    if (ret != 0) {
+      return CommandFailure(-ret, "rte_eth_dev_start() failed");
     }
   }
 
-  if (dev_info.tx_desc_lim.nb_min > 0 &&
-      queue_size[PACKET_DIR_OUT] < dev_info.tx_desc_lim.nb_min) {
-    int old_size_txq = queue_size[PACKET_DIR_OUT];
-    queue_size[PACKET_DIR_OUT] = dev_info.tx_desc_lim.nb_min;
-    LOG(WARNING) << "resizing TX queue size from " << old_size_txq << " to "
-                 << queue_size[PACKET_DIR_OUT];
-  }
-
-  if (dev_info.tx_desc_lim.nb_max > 0 &&
-      queue_size[PACKET_DIR_OUT] > dev_info.tx_desc_lim.nb_max) {
-    int old_size_txq = queue_size[PACKET_DIR_OUT];
-    queue_size[PACKET_DIR_OUT] = dev_info.tx_desc_lim.nb_max;
-    LOG(WARNING) << "capping TX queue size from " << old_size_txq << " to "
-                 << queue_size[PACKET_DIR_OUT];
-  }
-
-  for (int i = 0; i < num_txq; i++) {
-    ret = rte_eth_tx_queue_setup(ret_port_id, i, queue_size[PACKET_DIR_OUT],
-                                 sid, nullptr);
-    if (ret != 0) {
-      return CommandFailure(-ret, "rte_eth_tx_queue_setup() failed");
-    }
-  }
-
-  rte_eth_promiscuous_enable(ret_port_id);
-
-  int offload_mask = 0;
-  offload_mask |= arg.vlan_offload_rx_strip() ? RTE_ETH_VLAN_STRIP_OFFLOAD : 0;
-  offload_mask |= arg.vlan_offload_rx_filter() ? RTE_ETH_VLAN_FILTER_OFFLOAD : 0;
-  offload_mask |= arg.vlan_offload_rx_qinq() ? RTE_ETH_VLAN_EXTEND_OFFLOAD : 0;
-  if (offload_mask) {
-    ret = rte_eth_dev_set_vlan_offload(ret_port_id, offload_mask);
-    if (ret != 0) {
-      return CommandFailure(-ret, "rte_eth_dev_set_vlan_offload() failed");
-    }
-  }
-
-  ret = rte_eth_dev_start(ret_port_id);
-  if (ret != 0) {
-    return CommandFailure(-ret, "rte_eth_dev_start() failed");
-  }
 	
   if (ticks_per_cycle_mult == 0) {
     uint64_t cycles_base = rte_rdtsc();
@@ -378,8 +393,12 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   rte_eth_macaddr_get(dpdk_port_id_,
                       reinterpret_cast<rte_ether_addr *>(conf_.mac_addr.bytes));
 
-  // Reset hardware stat counters, as they may still contain previous data
-  CollectStats(true);
+  // Reset hardware stat counters, as they may still contain previous data.
+  // Only the primary does this: stats are device-wide, so a secondary
+  // resetting them would clobber counters other tenants are relying on.
+  if (is_primary_) {
+    CollectStats(true);
+  }
 
   driver_ = dev_info.driver_name ?: "unknown";
 
