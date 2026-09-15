@@ -6,7 +6,7 @@ import os
 import time
 
 # PMD port ID
-PMD_PORT_ID = 6
+PMD_PORT_ID = 0
 
 # Numbers of cores to use
 NUM_CORES = int(os.environ['ncpu'])
