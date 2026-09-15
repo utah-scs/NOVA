@@ -8,31 +8,74 @@ set -euo pipefail
 # Script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+# Directory the script was invoked from (used to resolve a relative
+# -o/--output-dir against the caller's cwd, not against SCRIPT_DIR).
+INVOKE_DIR="$(pwd)"
+
 
 # Server SSH
-SERVER_SSH="node2"
+SERVER_SSH="node0"
+
+# Server-side MAC address (for client -M/--server-mac). Update by hand.
+SERVER_MAC="b8:3f:d2:54:8e:fe"
 
 # DPU ssh
 DPU_SSH="ubuntu@192.168.100.2"
 
-# Server-side MAC address (for client -M/--server-mac). Update by hand.
-SERVER_MAC="c4:70:bd:a0:59:7e"
+# bess-nm directory on the DPU
+NOVA_DIR_DPU="~/NOVA"
 
 # SSH options
 #SSH_OPTS="${SERVER_SSH}"
 SSH_OPTS="-o StrictHostKeyChecking=no -J ${SERVER_SSH} ${DPU_SSH}"
 
 # lcores
-LCORES="0,2,4,6"
+LCORES="32,33,34,35"
 
 PPS_START=500000
 PPS_END=2000000
 PPS_STEP=100000
 BENCH_TIME=30
 N_ITER=5
-	
-#RAND_FOLDER=$(date +%Y%m%d%H%M%S)
+
+# Output directory for results. May be given as relative (resolved
+# against the caller's cwd) or absolute via -o/--output-dir; either way
+# it is resolved to an absolute path in OUTPUT_DIR below.
 RAND_FOLDER="tenant_scaling"
+
+usage() {
+	echo "Usage: $0 [-o|--output-dir DIR]"
+	echo ""
+	echo "  -o, --output-dir DIR   Output directory for results (default: ${RAND_FOLDER})"
+	echo "  -h, --help             Show this help message"
+}
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-o|--output-dir)
+			RAND_FOLDER="$2"
+			shift 2
+			;;
+		-h|--help)
+			usage
+			exit 0
+			;;
+		*)
+			echo "[EXP] ERROR: Unknown argument: $1" >&2
+			usage
+			exit 1
+			;;
+	esac
+done
+
+# Resolve the output directory to an absolute path, rather than nesting
+# it under ${SCRIPT_DIR}/results/. A relative RAND_FOLDER is resolved
+# against the directory the script was invoked from.
+if [[ "${RAND_FOLDER}" = /* ]]; then
+	OUTPUT_DIR="${RAND_FOLDER}"
+else
+	OUTPUT_DIR="${INVOKE_DIR}/${RAND_FOLDER}"
+fi
 
 check_ssh() {
 	echo "[EXP] Checking SSH access to ${SERVER_SSH} and ${DPU_SSH}"
@@ -48,53 +91,63 @@ check_ssh() {
 	echo ""
 }
 
+check_dpu_dir() {
+	echo "[EXP] Checking that ${NOVA_DIR_DPU} exists on DPU"
+	if ! ssh ${SSH_OPTS} "sh -c 'test -d ${NOVA_DIR_DPU}'" &> /dev/null; then
+		echo "[EXP] ERROR: Directory ${NOVA_DIR_DPU} does not exist on DPU (${DPU_SSH}). Check NOVA_DIR_DPU and try again." >&2
+		exit 1
+	fi
+	echo "[EXP] DPU directory OK"
+	echo ""
+}
+
 checkout_naam() {
 	echo "[EXP] Checking out naam"
 	echo ""
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/; git checkout eurosys27'" &> /dev/null
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/; git checkout main'" &> /dev/null
 }
 
 checkout_ipipe() {
 	echo "[EXP] Checking out ipipe"
 	echo ""
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/; git checkout ipipe-eurosys27'" &> /dev/null
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/; git checkout ipipe'" &> /dev/null
 
 }
 
 build_bess() {
 	echo "[EXP] Building BESS"
 	echo ""
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/; ./scripts/setup.sh build_bess'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/; ./scripts/setup.sh build_bess'"
 	echo ""
 }
 
 start_naam() {
 	echo "[EXP] Starting naam server"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/experiments; bash start_naam.sh $1 $2 $3 $4'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/experiments; bash start_naam.sh $1 $2 $3 $4'"
 	echo ""
 }
 
 stop_naam() {
 	echo "[EXP] Stopping naam server"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/experiments; bash stop_naam.sh'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/experiments; bash stop_naam.sh'"
 	echo ""
 }
 
 start_ipipe() {
 	echo "[EXP] Starting ipipe server"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/experiments; bash start_ipipe.sh $1 $2 $3 $4'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/experiments; bash start_ipipe.sh $1 $2 $3 $4'"
 	echo ""
 }
 
 stop_ipipe() {
 	echo "[EXP] Stopping ipipe server"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/experiments; bash stop_ipipe.sh $1'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/experiments; bash stop_ipipe.sh $1'"
 	echo ""
 }
 
 set_eswitch_dpu() {
 	echo "[EXP] Setting e-switch to send traffic to DPU"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/scripts; ./switchctl.sh dpu'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/scripts; ./switchctl.sh dpu'"
 }
 
 run_exp_lat_tput_naam() {
@@ -148,7 +201,7 @@ process_results_func() {
 }
 
 process_results() {
-	RESULT_DIR="${SCRIPT_DIR}/results/${RAND_FOLDER}/${1}/"
+	RESULT_DIR="${OUTPUT_DIR}/${1}/"
 	RESULT_FILE="${RESULT_DIR}/func_results.csv"
 	echo "[EXP] Writing results to ${RESULT_FILE}"
 	echo "functions,tput_sent,tput_recv,lat_99th" > ${RESULT_FILE}
@@ -160,7 +213,7 @@ process_results() {
 }
 
 create_result_dir() {
-	RESULT_DIR="${SCRIPT_DIR}/results/${RAND_FOLDER}/${1}/func_${2}"
+	RESULT_DIR="${OUTPUT_DIR}/${1}/func_${2}"
 	RESULT_FILE="${RESULT_DIR}/lat_tpu_results.csv"
 
 	# Check if the result directory exists
@@ -179,7 +232,7 @@ generate_plots_lat_tput() {
 
 generate_plot_func_scale() {
 	echo "[EXP] Generating function scaling plot"
-	RESULT_DIR="${SCRIPT_DIR}/results/${RAND_FOLDER}/"
+	RESULT_DIR="${OUTPUT_DIR}/"
 	RESULT_FILE_NAAM="${RESULT_DIR}/naam/func_results.csv"
 	RESULT_FILE_IPIPE="${RESULT_DIR}/ipipe/func_results.csv"
 	${SCRIPT_DIR}/plot_function_scale.py ${RESULT_FILE_NAAM} ${RESULT_FILE_IPIPE} &> /dev/null
@@ -216,7 +269,7 @@ run_naam() {
 	stop_ipipe 16
 	checkout_naam
 	build_bess
-	#set_eswitch_dpu
+	set_eswitch_dpu
 
 	run_naam_func 4 1 # use 4 cores for 1 function
 	run_naam_func 4 2
@@ -238,7 +291,7 @@ run_ipipe() {
 	stop_ipipe 16
 	checkout_ipipe
 	build_bess
-	#set_eswitch_dpu
+	set_eswitch_dpu
 
 	run_ipipe_func 4 1 # use 4 cores for 1 function
 	run_ipipe_func 4 2
@@ -271,12 +324,13 @@ compare_naam() {
 
 # Compare NAAM with iPipe
 compare_ipipe() {
-	run_naam
-	run_ipipe
+	#run_naam
+	#run_ipipe
 	generate_plot_func_scale
 }
 
 check_ssh
+check_dpu_dir
 
 #compare_naam
 compare_ipipe
