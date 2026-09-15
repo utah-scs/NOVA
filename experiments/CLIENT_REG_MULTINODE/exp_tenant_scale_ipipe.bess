@@ -12,7 +12,7 @@ import os
 import time
 
 # PMD port ID
-PMD_PORT_ID = 6
+PMD_PORT_ID = 0
 
 # Numbers of queue to use
 NUM_QUEUES = int(os.environ['num_queues'])
