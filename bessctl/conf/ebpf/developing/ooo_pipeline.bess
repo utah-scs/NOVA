@@ -1,0 +1,28 @@
+# testpmdport = PMDPort(name='testpmdport', vdev='eth_vhost1,iface=/tmp/test_pmd_vhost.sock,queues=1,in_order=0')
+
+# vhost = PMDPort(name='my_vhost', vdev='eth_vhost0,iface=/tmp/my_vhost.sock,queues=1')
+
+
+# QueueInc(port=testpmdport, qid=0) -> Sink()
+# QueueInc(port=vhost, qid=0) -> Sink()
+# QueueInc(port=vhost, qid=0) -> QueueOut(port=vhost, qid=0)
+#
+
+import scapy.all as scapy
+
+pkt_size = int($SN_PKT_SIZE!'60')
+assert(60 <= pkt_size <= 1522)
+
+#use scapy to build a packet template
+eth = scapy.Ether(src='02:1e:67:9f:4d:ae', dst='06:16:3e:1b:72:32')
+ip = scapy.IP(src='10.0.0.1', dst='10.0.0.2')   # dst IP is overwritten
+udp = scapy.UDP(sport=10001, dport=10002)
+payload = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/udp)]
+pkt = eth/ip/udp/payload
+pkt_data = str(pkt)
+
+# Source() ->  -> Sink()
+
+FlowGen(template=pkt_data, pps=40000000, flow_rate = 10, flow_duration = 5.0,
+arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000) -> UBPF(bpf_file_address='/home/alireza/test/bess/core/utils/prog.o') -> Sink()
+# arrival='uniform', duration='uniform', quick_rampup=True, ip_src_range=100000) -> Sink()

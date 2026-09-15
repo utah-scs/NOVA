@@ -1,0 +1,138 @@
+# Copyright (c) 2014-2016, The Regents of the University of California.
+# Copyright (c) 2016-2017, Nefeli Networks, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+# # * Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# * Neither the names of the copyright holders nor the names of their
+# contributors may be used to endorse or promote products derived from this
+# software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+# Simple IPv4 LPM example. Try tcpdump on each output gate of 'ipfwd'.
+import scapy.all as scapy
+
+def gen_packet(dst_ip):
+    # eth = scapy.Ether(src='00:8C:FA:F7:19:38', dst='00:8C:FA:F7:19:3E')
+    eth = scapy.Ether(src='1c:34:da:41:d2:94', dst='1c:34:da:41:cb:94')
+    # eth = scapy.Ether(src='1c:34:da:41:d2:95', dst='1c:34:da:41:cb:95')
+    ip = scapy.IP(src='1.2.3.4', dst=dst_ip)
+    udp = scapy.UDP(sport=10001, dport=10002)
+    payload = ('hello' + '0123456789' * 200)[:pkt_size-len(eth/ip/udp)]
+    pkt = eth/ip/udp/payload
+    return bytes(pkt)
+
+# Preparing the a couple of packets
+def prepare_packet_group(ips):
+        pkts_template = []
+        for ip in ips:
+                # ip_to_make = [init_ip, str(i)]
+                # ip = ''.join(ip_to_make)
+                pkts_template.append(gen_packet(ip))
+        assert(pkts_template)
+        return pkts_template
+
+def load_ip_bag(rules):
+        packs = []
+        pack = []
+        for ip in rules:
+                # gate = random.randint(0,total_sink)
+                # table.load(ip=ip, gate=gate)
+                # table.add(prefix=ip, prefix_len=32, gate=gate)
+                pack.append(ip)
+                if(len(pack) == 28):
+                        packs.append(pack)
+                        pack = []
+	# if len(packs) == 0 and len(pack) > 0:
+	# 	packs.append(pack)
+        return packs
+
+def load_rules(filename, rules):
+        first_line = True
+        count = 0
+        with open(filename) as in_file:
+           for line in in_file:
+                if first_line or count < 4:
+                        first_line = False
+                        count += 1
+                        continue
+
+                line = line.split(" ")
+                line = line[0].split("/")
+                rules.append(line[0])
+		# if count == 4:
+		# 	return
+                count += 1
+
+def load_lpm_hashtable(table, rules):
+        count = 0
+        for ip in rules:
+                print(count, ip)
+                count += 1
+                gate = random.randint(0, total_sink - 1)
+                table.load(ip=ip, gate=gate)
+                table.add(prefix=ip, prefix_len=32, gate=gate)
+        table.add(prefix='0.0.0.0', prefix_len=0, gate=total_sink - 1)
+
+
+import random
+# from ip_utils import *
+
+pkt_size = int($BESS_PKT_SIZE!'60')
+
+assert(60 <= pkt_size <= 1522)
+
+init_ip_bag = ['172.16.100.{}', 
+		   '10.20.0.{}',
+		   '10.39.0.{}',
+		   '10.39.16.{}',
+		   '10.48.32.{}',
+	           '10.62.64.{}',
+		   '10.63.112.{}',
+		   '171.64.2.{}',]
+rules = []
+total_sink = 5
+PCI = "41:00.0"
+filename = "/home/alireza/bess/bessctl/conf/samples/boza_rtr_route.txt"
+bess.add_worker(wid=0, core=1)
+
+
+ipfwd::IPLookup(max_rules=4096)
+
+
+# loading the rules
+load_rules(filename, rules)
+
+# loading the hash table
+load_lpm_hashtable(ipfwd, rules)
+
+myport::PMDPort(port_id=0, num_inc_q=8, num_out_q=1)
+sendport::PMDPort(port_id=1, num_inc_q=8, num_out_q=8)
+
+for i in range(8):
+	QueueInc(port=myport, qid=i) -> ipfwd
+
+for i in range(4):
+  gate = i%(total_sink-1)
+  ipfwd:gate -> QueueOut(port=sendport, qid=i)
+
+# for i in range(1, total_sink):
+ipfwd:total_sink -> Sink()

@@ -1,0 +1,21 @@
+bess.add_worker(0, 1)
+
+pmdport::PMDPort(port_id=1, num_inc_q=1, num_out_q=1)
+server_out::QueueOut(port=pmdport, qid=0)
+server_in::QueueInc(port=pmdport, qid=0)
+
+emArp::ExactMatch(fields=[{'offset':12, 'num_bytes':2}])
+emArp.add(fields=[{'value_bin': b'\x08\x06'}], gate=0)
+emArp.set_default_gate(gate=1)
+
+# Add ARP responder
+arp_resp::ArpResponder()
+arp_resp.add(ip='10.10.1.1', mac_addr='9c:dc:71:56:bf:55')
+
+# Send ARP response
+server_in -> emArp
+emArp:0 -> arp_resp -> server_out
+
+# All other traffic to Sink
+emArp:1 -> Sink()
+

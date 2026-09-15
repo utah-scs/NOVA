@@ -1,0 +1,76 @@
+# Server with multicore pipeline
+
+import scapy.all as scapy
+import socket
+import os
+import time
+import math
+
+# PMD port ID
+PMD_PORT_ID = 6
+QUEUE_SIZE = 1024
+
+# Numbers of cores to use
+NUM_CORES = int(os.environ['ncpu'])
+
+# PCI address of the NIC
+PCI_ADDR = '03:00.0'
+
+# Memory access type:
+#   0: Local memory access
+#   1: DMA from host
+MEM_TYPE = 1
+
+NUM_KEYS    = int(os.environ.get('num_keys', 1000000))
+NUM_BUCKETS = 1 << math.ceil(math.log2(max(NUM_KEYS // 15, 1)))
+ITEM_SIZE   = 32  # sizeof(mehcached_item)
+REGION_SIZE = 8 + NUM_BUCKETS * 128 + NUM_KEYS * ITEM_SIZE
+# Round up to next GiB
+REGION_SIZE = ((REGION_SIZE + (1 << 30) - 1) >> 30) << 30
+
+for i in range(0, NUM_CORES):
+    bess.add_worker(i, i)
+
+pmdport::PMDPort(port_id=PMD_PORT_ID, num_inc_q=NUM_CORES, num_out_q=NUM_CORES, size_inc_q=QUEUE_SIZE, size_out_q=QUEUE_SIZE)
+
+# Create 8 rx queues for each core
+queue_out = []
+for i in range(0, NUM_CORES):
+    queue_out.append(QueueOut(port=pmdport, qid=i))
+    
+# Create 8 tx queues for each core
+queue_inc = []
+for i in range(0, NUM_CORES):
+    q_in = QueueInc(port=pmdport, qid=i)
+    q_in.attach_task(wid=i)
+    queue_inc.append(q_in)
+
+
+# Match UDP destination port
+ems = []
+for i in range(0, NUM_CORES):
+    em = ExactMatch(fields=[{'offset':36, 'num_bytes':2}])
+    em.add(fields=[{'value_int':socket.htons(10002)}], gate=0)
+    em.set_default_gate(gate=1)
+    queue_inc[i] -> em
+    ems.append(em)
+
+bpf_obj=[]
+nobj = int(os.environ['nobj'])
+for i in range(0, nobj):
+    bpf_obj.append({'bpf_file_path':os.environ['bpf_obj' + str(i)], 'id':i})
+
+# Create UBPF and DMA pipeline
+ubpf = []
+dma = []
+for i in range(0, NUM_CORES):
+    if os.environ['enable_jit'] == "True":
+      ubpf.append(UBPF(functions=bpf_obj, bpf_enable_jit=True))
+    else:
+      ubpf.append(UBPF(functions=bpf_obj, bpf_enable_jit=False))
+
+    dma.append(DMA(id=1, size=REGION_SIZE, num_keys=NUM_KEYS, memtype=MEM_TYPE, pci_addr=PCI_ADDR))
+
+    ems[i]:0 -> ubpf[i]
+    ubpf[i]:0 -> dma[i] -> ubpf[i]
+    ubpf[i]:1 -> queue_out[i]

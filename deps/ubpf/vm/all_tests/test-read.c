@@ -1,0 +1,40 @@
+/*
+ * Test: Actual dma read operation
+ * Input packet: read.pkt
+ * 
+ */
+
+#include "naam.h"
+
+typedef struct __attribute__((packed)) app_data {
+  uint8_t op_type;
+  uint64_t mr_offset;
+  uint64_t data_size;
+} app_data_t;
+
+SECTION("xdp")
+uint64_t prog(struct xdp_md *ctx) {
+  void *pkt = (void *)(long)ctx->data; 
+  void *pkt_end = (void *)(long)ctx->data_end; 
+
+  if (pkt + offsetof(req_pkt_t, data) + sizeof(app_data_t) > pkt_end)
+    return 1;
+
+  app_data_t *app_req = (app_data_t *)APP_REGION_PTR(pkt);
+  int offset = APP_REGION_OFFSET(pkt) + sizeof(app_data_t);
+
+  // Read data from memory region into packet
+  int ret = DMA_READ(pkt, DMA_ADDR(1, 0, offset), DMA_ADDR(1, 1, app_req->mr_offset), app_req->data_size);
+
+  if (ret != RET_DMA_SUCCESS) {
+    return 1;
+  }
+
+  char *data = (char *)APP_REGION_PTR(pkt) + sizeof(app_data_t);
+  
+  if (data[0] != 'h') {
+    return 1;
+  }
+
+  return 0;
+}

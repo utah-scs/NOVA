@@ -1,0 +1,8 @@
+libubpf.a
+test
+offsets
+*.o
+*.gcov
+*.gcda
+*.gcno
+*.pkt

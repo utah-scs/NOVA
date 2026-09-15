@@ -1,0 +1,69 @@
+# Server with multicore pipeline
+
+import scapy.all as scapy
+import socket
+import os
+import time
+
+# PMD port ID
+PMD_PORT_ID = 6
+QUEUE_SIZE = 1024
+
+# Numbers of cores to use
+NUM_CORES = int(os.environ['ncpu'])
+
+# PCI address of the NIC
+PCI_ADDR = '03:00.0'
+
+# Memory access type:
+#   0: Local memory access
+#   1: DMA from host
+MEM_TYPE = 1
+
+# Destination port for the set operations
+DST_PORT_GET_OP = 10002
+
+for i in range(0, NUM_CORES):
+    bess.add_worker(i, i)
+
+pmdport::PMDPort(port_id=PMD_PORT_ID, num_inc_q=NUM_CORES, num_out_q=NUM_CORES, size_inc_q=QUEUE_SIZE, size_out_q=QUEUE_SIZE)
+
+# Create 8 rx queues for each core
+queue_out = []
+for i in range(0, NUM_CORES):
+    queue_out.append(QueueOut(port=pmdport, qid=i))
+    
+# Create 8 tx queues for each core
+queue_inc = []
+for i in range(0, NUM_CORES):
+    q_in = QueueInc(port=pmdport, qid=i)
+    q_in.attach_task(wid=i)
+    queue_inc.append(q_in)
+
+
+# Match UDP destination port
+ems = []
+for i in range(0, NUM_CORES):
+    em = ExactMatch(fields=[{'offset':36, 'num_bytes':2}])
+    em.add(fields=[{'value_int':socket.htons(DST_PORT_GET_OP)}], gate=0)
+    em.set_default_gate(gate=1)
+    queue_inc[i] -> em
+    ems.append(em)
+
+# Only takes the get path BPF code
+bpf_obj=os.environ['bpf_obj0']
+
+# Create UBPF and DMA pipeline
+ubpf = []
+dma = []
+for i in range(0, NUM_CORES):
+    if os.environ['enable_jit'] == "True":
+      ubpf.append(UBPF(bpf_file_path=bpf_obj, bpf_enable_jit=True))
+    else:
+      ubpf.append(UBPF(bpf_file_path=bpf_obj))
+
+    dma.append(DMA(id = 1, size = 1024 * 1024 * 1024, memtype = MEM_TYPE, pci_addr=PCI_ADDR))
+
+    ems[i]:0 -> ubpf[i]
+    ubpf[i]:0 -> dma[i] -> ubpf[i]
+    ubpf[i]:1 -> queue_out[i]

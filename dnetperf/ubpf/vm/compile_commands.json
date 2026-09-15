@@ -1,0 +1,146 @@
+[
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "ubpf_jit_x86_64.o",
+            "ubpf_jit_x86_64.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "ubpf_jit_x86_64.c"
+    },
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "offsets.o",
+            "offsets.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "offsets.c"
+    },
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "ubpf_vm.o",
+            "ubpf_vm.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "ubpf_vm.c"
+    },
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "test.o",
+            "test.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "test.c"
+    },
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "ubpf_ext.o",
+            "ubpf_ext.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "ubpf_ext.c"
+    },
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "ubpf_loader.o",
+            "ubpf_loader.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "ubpf_loader.c"
+    },
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "ubpf_jit.o",
+            "ubpf_jit.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "ubpf_jit.c"
+    },
+    {
+        "arguments": [
+            "cc",
+            "-c",
+            "-Wall",
+            "-Werror",
+            "-Iinc",
+            "-O2",
+            "-g",
+            "-Wunused-parameter",
+            "-fPIC",
+            "-o",
+            "ubpf_jit_arm64.o",
+            "ubpf_jit_arm64.c"
+        ],
+        "directory": "/home/ashfaq/repos/bess-nm/deps/ubpf/vm",
+        "file": "ubpf_jit_arm64.c"
+    }
+]

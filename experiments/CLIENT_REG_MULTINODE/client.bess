@@ -1,0 +1,89 @@
+import scapy.all as scapy
+import socket
+import os
+import time
+
+bess.add_worker(0, 1)
+
+# Craft a packet with the specified IP and MAC addresses
+def gen_packet(proto, src_port, dst_port, src_ip, dst_ip, src_mac, dst_mac, payload):
+    eth = scapy.Ether(src=src_mac, dst=dst_mac)
+    ip = scapy.IP(src=src_ip, dst=dst_ip)
+    udp = proto(sport=src_port, dport=dst_port)
+    
+    # Before adding payload add 264 bytes of 0
+    # for NULL VM state
+    vm_state_size = 264
+    dma_req_size = 48 
+    data = 0 
+    payload = payload + data.to_bytes(vm_state_size, 'little')
+    payload = payload + data.to_bytes(dma_req_size, 'little')
+
+    pkt = eth/ip/udp/payload
+    return bytes(pkt)
+
+# Generate payload for set operation
+# cmd field for set operation is 1
+def gen_set_payload(offset, data):
+    # Parameter length
+    # 2b parameter + 8b timestamp + 8b sequence number
+    # + 1b server type + 1b command + 8b offset + 8b size + len(Actual Data)
+    param_size = 28 + len(data)
+    timestamp = int(time.time())  # Timestamp
+    nseq = 0                      # Sequence number
+    server_type = 0               # Server type: 0 DPU, 1 HOST
+    cmd = 1                       # Opcode
+    size = len(data)              # Actual Data
+    end = 'little'                # Endianness
+    
+    return param_size.to_bytes(2, end) + timestamp.to_bytes(8, end) + nseq.to_bytes(8, end) + server_type.to_bytes(1, end) + cmd.to_bytes(1, end) + offset.to_bytes(8, end) + size.to_bytes(8, end) + bytes(data, 'utf-8')
+
+# Generate payload for get operation
+# cmd field for get operation is 0
+def gen_get_payload(offset, size):
+    # Parameter length
+    # 2b parameter + 8b timestamp + 8b sequence number
+    # + 1b server_type + 1b command + 8b offset + 8b size
+    param_size = 28
+    timestamp = int(time.time())  # timestamp
+    nseq = 0                      # Sequence number
+    server_type = 0               # Server type: 0 DPU, 1 HOST
+    cmd = 0                       # Opcode
+    end = 'little'                # Endianness
+
+    return param_size.to_bytes(2, end) + timestamp.to_bytes(8, end) + nseq.to_bytes(8, end) + server_type.to_bytes(1, end) + cmd.to_bytes(1, end) + offset.to_bytes(8, end) + size.to_bytes(8, end)
+
+# Generate linked list payload
+def gen_linked_list_payload(node_size):
+    # Parameter length
+    # 2b parameter + 8b timestamp + 8b sequence number
+    # 1b server_type + 4b node size
+    param_size = 23
+    timestamp = int(time.time())  # timestamp
+    nseq = 0                      # Sequence number
+    server_type = 0               # Server type: 0 DPU, 1 HOST
+    end = 'little'                # Endianness
+    
+    return param_size.to_bytes(2, end) + timestamp.to_bytes(8, end) + nseq.to_bytes(8, end) + server_type.to_bytes(1, end) + node_size.to_bytes(4, end)
+
+# Set server and client addresses
+client_ip = '10.10.1.2'
+client_mac = '9c:dc:71:5b:42:d1'
+
+server_ip = '10.10.1.1'
+server_mac = '9c:dc:71:4c:43:01'
+
+# Packet templates for the rewrite module
+#packets = [gen_packet(scapy.UDP, 10001, 10002, client_ip, server_ip, client_mac, server_mac, gen_set_payload(16, 'helloworld')),
+#           gen_packet(scapy.UDP, 10001, 10002, client_ip, server_ip, client_mac, server_mac, gen_get_payload(16, len('helloworld'))),
+#]
+
+packets = [gen_packet(scapy.UDP, 10001, 10002, client_ip, server_ip, client_mac, server_mac, gen_linked_list_payload(4)),
+           gen_packet(scapy.UDP, 10001, 10002, client_ip, server_ip, client_mac, server_mac, gen_linked_list_payload(4)),
+]
+
+pmdport::PMDPort(port_id=1, num_inc_q=1, num_out_q=1)
+
+Source() -> Rewrite(templates=packets) -> QueueOut(port=pmdport, qid=0)
+
+QueueInc(port=pmdport, qid=0) -> Sink()

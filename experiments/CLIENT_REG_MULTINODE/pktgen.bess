@@ -1,0 +1,26 @@
+import scapy.all as scapy
+
+bess.add_worker(0, 1)
+
+# Craft a packet with the specified IP and MAC addresses
+def gen_packet(proto, src_port, dst_port, src_ip, dst_ip, src_mac, dst_mac):
+	eth = scapy.Ether(src=src_mac, dst=dst_mac)
+	ip = scapy.IP(src=src_ip, dst=dst_ip)
+	udp = proto(sport=src_port, dport=dst_port)
+
+	payload = bytes("hello", 'utf-8')
+	pkt = eth/ip/udp/payload
+	return bytes(pkt)
+
+# Set server and client addresses
+client_ip = '10.10.1.2'
+client_mac = '0c:42:a1:dd:58:68'
+
+server_ip = '10.10.1.1'
+server_mac = '0c:42:a1:dd:57:ec'
+
+packets = [gen_packet(scapy.UDP, 10001, 10002, client_ip, server_ip, client_mac, server_mac)]
+
+pmdport::PMDPort(port_id=1, num_inc_q=1, num_out_q=1)
+
+Source() -> Rewrite(templates=packets) -> QueueOut(port=pmdport, qid=0)

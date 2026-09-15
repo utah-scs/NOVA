@@ -1,0 +1,113 @@
+# Server with multicore pipeline
+
+import scapy.all as scapy
+import socket
+import os
+import time
+import math
+
+# PMD port ID
+PMD_PORT_ID = 2
+
+# Numbers of cores to use
+NUM_CORES = int(os.environ['ncpu'])
+
+# NUMA offset for CPU number
+CPU_NUMA_OFFSET=32
+
+# NUMA cpu organization
+# Are cpus split across numa nodes in a range?
+# Example: 0 - 7 Node 0 and 8 - 15 Node 1
+CPU_NUMA_ORG = 'linear'
+#
+# Or cpus are split in even odd fashion
+# Example: 0,2,4,6 to Node 0
+# 1,3,5,7 to Node 1
+# CPU_NUMA_ORG = 'even' or 'odd'
+# CPU_NUMA_ORG = 'even'
+
+# PCI address of the NIC
+PCI_ADDR = '81:00.0'
+
+# Memory access type:
+#   0: Local memory access
+#   1: DMA from host
+MEM_TYPE = 0
+
+# Data structure type:
+# plain: No data structure
+# llist: Linked list
+# hashtable: Hashtable
+STRUCTURE='hashtable'
+
+NUM_KEYS    = int(os.environ.get('num_keys', 1000000))
+NUM_BUCKETS = 1 << math.ceil(math.log2(max(NUM_KEYS // 15, 1)))
+ITEM_SIZE   = 32  # sizeof(mehcached_item)
+REGION_SIZE = 8 + NUM_BUCKETS * 128 + NUM_KEYS * ITEM_SIZE
+# Round up to next GiB
+REGION_SIZE = ((REGION_SIZE + (1 << 30) - 1) >> 30) << 30
+
+# Destination port for all incoming requests
+DST_PORT_ALL_OP = 10002
+
+# Destination port for mutating operations
+DST_PORT_MUT_OP = 31633
+
+for i in range(0, NUM_CORES):
+    if CPU_NUMA_ORG == 'even':
+        bess.add_worker(i, i * 2)
+    elif CPU_NUMA_ORG == 'odd':
+        bess.add_worker(i, (i * 2) + 1)
+    else:
+        bess.add_worker(i, i + CPU_NUMA_OFFSET)
+
+pmdport::PMDPort(port_id=PMD_PORT_ID, num_inc_q=NUM_CORES, num_out_q=NUM_CORES)
+
+# Create 8 rx queues for each core
+queue_out = []
+for i in range(0, NUM_CORES):
+    queue_out.append(QueueOut(port=pmdport, qid=i))
+    
+# Create 8 tx queues for each core
+queue_inc = []
+for i in range(0, NUM_CORES):
+    q_in = QueueInc(port=pmdport, qid=i)
+    q_in.attach_task(wid=i)
+    queue_inc.append(q_in)
+
+
+# Match UDP destination port
+ems = []
+for i in range(0, NUM_CORES):
+    em = ExactMatch(fields=[{'offset':36, 'num_bytes':2}])
+    em.add(fields=[{'value_int':socket.htons(DST_PORT_ALL_OP)}], gate=0)
+    em.add(fields=[{'value_int':socket.htons(DST_PORT_MUT_OP)}], gate=0)
+    em.set_default_gate(gate=1)
+    queue_inc[i] -> em
+    ems.append(em)
+
+bpf_obj=[]
+nobj = int(os.environ['nobj'])
+for i in range(0, nobj):
+    bpf_obj.append({'bpf_file_path':os.environ['bpf_obj' + str(i)], 'id':i})
+
+memory_init = True
+
+# Create UBPF and DMA pipeline
+ubpf = []
+dma = []
+for i in range(0, NUM_CORES):
+    if os.environ['enable_jit'] == "True":
+      ubpf.append(UBPF(functions=bpf_obj, bpf_enable_jit=True))
+    else:
+      ubpf.append(UBPF(functions=bpf_obj, bpf_enable_jit=False))
+
+    if memory_init == True:
+        dma.append(DMA(id=1, size=REGION_SIZE, num_keys=NUM_KEYS, memtype=MEM_TYPE, pci_addr=PCI_ADDR, structure=STRUCTURE, init=True))
+        memory_init = False
+    else:
+        dma.append(DMA(id=1, size=REGION_SIZE, num_keys=NUM_KEYS, memtype=MEM_TYPE, pci_addr=PCI_ADDR, structure=STRUCTURE))
+
+    ems[i]:0 -> ubpf[i]
+    ubpf[i]:0 -> dma[i] -> ubpf[i]
+    ubpf[i]:1 -> queue_out[i]

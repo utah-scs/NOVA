@@ -1,0 +1,51 @@
+# Server with multicore pipeline
+# This pipeline just sinks all packets that are sent to port 10002
+
+import scapy.all as scapy
+import socket
+import os
+import time
+
+# Numbers of cores to use
+NUM_CORES = 6
+
+for i in range(0, NUM_CORES):
+    bess.add_worker(i, i)
+
+pmdport::PMDPort(port_id=1, num_inc_q=NUM_CORES, num_out_q=NUM_CORES)
+
+# Create 8 rx queues for each core
+queue_out = []
+for i in range(0, NUM_CORES):
+    queue_out.append(QueueOut(port=pmdport, qid=i))
+    
+# Create 8 tx queues for each core
+queue_inc = []
+for i in range(0, NUM_CORES):
+    q_in = QueueInc(port=pmdport, qid=i)
+    q_in.attach_task(wid=i)
+    queue_inc.append(q_in)
+
+
+# Match UDP destination port
+ems = []
+for i in range(0, NUM_CORES):
+    em = ExactMatch(fields=[{'offset':36, 'num_bytes':2}])
+    em.add(fields=[{'value_int':socket.htons(10002)}], gate=0)
+    em.set_default_gate(gate=1)
+    queue_inc[i] -> em
+    ems.append(em)
+
+path = os.getcwd()
+bpf_obj=os.environ['bpf_obj']
+
+# Sink pulled packets
+ubpf = []
+for i in range(0, NUM_CORES):
+    if os.environ['enable_jit'] == "True":
+      ubpf.append(UBPF(bpf_file_path='{}/CLIENT_REG_MULTINODE/{}'.format(path, bpf_obj), bpf_enable_jit=True))
+    else:
+      ubpf.append(UBPF(bpf_file_path='{}/CLIENT_REG_MULTINODE/{}'.format(path, bpf_obj)))
+    
+    ems[i]:0 -> ubpf[i]
+    ubpf[i]:1 -> Sink()

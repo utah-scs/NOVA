@@ -1,0 +1,110 @@
+import scapy.all as scapy
+import socket
+import os
+import time
+
+# Craft a packet with the specified IP addresses
+def gen_packet(proto, src_port, dst_port, src_ip, dst_ip, payload):
+    eth = scapy.Ether(src='02:1e:67:9f:4d:ae', dst='06:16:3e:1b:72:32')
+    ip = scapy.IP(src=src_ip, dst=dst_ip)
+    udp = proto(sport=src_port, dport=dst_port)
+    
+    # Before adding payload add 264 bytes of 0
+    # for NULL VM state
+    vm_state_size = 264 + (128*3)
+    dma_req_size = 48 
+    data = 0 
+    payload = payload + data.to_bytes(vm_state_size, 'little')
+    payload = payload + data.to_bytes(dma_req_size, 'little')
+    #payload = payload + data.to_bytes(buf_size, 'little')
+
+    pkt = eth/ip/udp/payload
+    return bytes(pkt)
+
+# Generate payload for hashtable set operation
+def gen_set_payload(key, value):
+    # Parameter length
+    # 2b parameter + 8b timestamp + 8b sequence number
+    # + 1b server type + 1b command + 8b offset + 8b size
+    param_size = 36
+    timestamp = int(time.time())  # Timestamp
+    nseq = 0                      # Sequence number
+    server_type = 1               # Server type: 0 DPU, 1 HOST
+    cmd = 0                       # Opcode. Don't care for ht get/set
+    offset = 0                    # Offset to data. Don't care for ht get/set
+    size = 0                      # Size of data. Don't care for ht get/set
+    end = 'little'                # Endianness
+
+    # Hash table specific parameters (Part of Data)
+    ht_command = 1                # HT command. 0 - GET, 1 - SET
+                                  # Can be also used to flag status of the operation. e.g: Successful/Failed
+    
+    return param_size.to_bytes(2, end) + timestamp.to_bytes(8, end) + nseq.to_bytes(8, end) + server_type.to_bytes(1, end) + cmd.to_bytes(1, end) + offset.to_bytes(8, end) + size.to_bytes(8, end) + ht_command.to_bytes(1, end) + key.to_bytes(8, end) + value.to_bytes(8, end)
+
+# Generate payload for hashtable set operation
+def gen_get_payload(key):
+    # Parameter length
+    # 2b parameter + 8b timestamp + 8b sequence number
+    # + 1b server type + 1b command + 8b offset + 8b size
+    param_size = 36
+    timestamp = int(time.time())  # Timestamp
+    nseq = 0                      # Sequence number
+    server_type = 1               # Server type: 0 DPU, 1 HOST
+    cmd = 0                       # Opcode. Don't care for ht get/set
+    offset = 0                    # Offset to data. Don't care for ht get/set
+    size = 0                      # Size of data. Don't care for ht get/set
+    end = 'little'                # Endianness
+
+    # Hash table specific parameters (Part of Data)
+    ht_command = 0                # HT command. 0 - GET, 1 - SET.
+                                  # Can be also used to flag status of the operation. e.g: Successful/Failed
+
+    value = 0                     # Placeholder for the GET operation
+    
+    return param_size.to_bytes(2, end) + timestamp.to_bytes(8, end) + nseq.to_bytes(8, end) + server_type.to_bytes(1, end) + cmd.to_bytes(1, end) + offset.to_bytes(8, end) + size.to_bytes(8, end) + ht_command.to_bytes(1, end) + key.to_bytes(8, end) + value.to_bytes(8, end)
+
+
+packets = [gen_packet(scapy.UDP, 10001, 10002, '172.16.100.1', '10.0.0.1', gen_set_payload(44, 666)),
+           gen_packet(scapy.UDP, 10003, 10004, '172.12.55.99', '12.34.56.78', gen_get_payload(47)),
+           gen_packet(scapy.UDP, 10001, 10002, '172.16.100.1', '10.0.0.1', gen_set_payload(88, 333)),
+           gen_packet(scapy.UDP, 10003, 10004, '172.12.55.99', '12.34.56.78', gen_get_payload(88)),
+]
+
+def read_elf(file_path):
+  with open(file_path, 'rb') as f:
+    return f.read() 
+
+# Match UDP port number
+em::ExactMatch(fields=[{'offset':36, 'num_bytes':2}])
+
+path = os.getcwd()
+
+# Create a UBPF instance from BPF object file
+if os.environ['enable_jit'] == "True":
+  ubpf_1::UBPF(bpf_file_path='{}/MICA_LOCAL/{}'.format(path, 'bpf.o'), bpf_enable_jit=True)
+else:
+  ubpf_1::UBPF(bpf_file_path='{}/MICA_LOCAL/{}'.format(path, 'bpf.o'))
+
+
+# Initial pipeline
+Source() -> Rewrite(templates=packets) -> em
+
+# Send packets form gate 0 of em to ubpf_1
+em:0 -> ubpf_1
+em:2 -> Sink()
+
+# Match UDP port 10002 and send those to em gate 0
+em.add(fields=[{'value_int':socket.htons(10002)}], gate=0)
+em.add(fields=[{'value_int':socket.htons(10004)}], gate=0)
+
+em.set_default_gate(gate=2)
+
+# First DMA module
+dma_1::DMA(id = 1, size = 1024 * 1024, structure = "hashtable")
+
+# Pipeline for the UBPF engine
+ubpf_1:0 -> dma_1 -> ubpf_1
+ubpf_1:1 -> Sink()
+
+# Run the pipeline for 5 minutes
+time.sleep(5)
