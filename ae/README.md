@@ -4,6 +4,10 @@ For the evaluation of NOVA CloulLab node r7525 is used. For all of the experimen
 
 ## Setting up the server ##
 
+<details>
+<summary>Setting up the server</summary>
+### Setting up the server host ###
+
 Install DOCA:
 
 ```
@@ -73,6 +77,7 @@ Similar to host setup hugepages in DPU and then power cycle host.
 ```
 echo 8 | sudo tee /sys/kernel/mm/hugepages/hugepages-524288kB/nr_hugepages
 ```
+</details>
 
 ### Building NOVA ###
 
