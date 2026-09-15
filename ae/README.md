@@ -6,6 +6,7 @@ For the evaluation of NOVA CloulLab node r7525 is used. For all of the experimen
 
 <details>
 <summary>Setting up the server</summary>
+
 ### Setting up the server host ###
 
 Install DOCA:
