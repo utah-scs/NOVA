@@ -138,11 +138,11 @@ bash scripts/exp_ipipe_scaling.sh -o ../ae/figures/fig-4/
 
 After the experiment is finished running generated figure can be found in: `${NOVA_DIR}/ae/figures/fig-4/func_scaling.pdf`
 
-## Mitigating Host CPU Interference (Figure-7) ##
+## WIP: Mitigating Host CPU Interference (Figure-7) ##
 
-## The Impact of Placement (Figure-8) ##
+## WIP: The Impact of Placement (Figure-8) ##
 
-## B+tree Performance (Figure-9) ##
+## WIP: B+tree Performance (Figure-9) ##
 
 ### Running BPT on the server host ###
 
@@ -188,4 +188,11 @@ cd NOVA
 ./experiments/run_exp.py -e experiments/BPTREE/ -c experiments/BPTREE/bplus-search-naam-dpu.bess -b experiments/BPTREE/bplus-search-naam.c -j -n 6
 ```
 
-## Comparison with Outback and eRPC (Figure-10) ##
+Run the following command on the client (`node1`) to get latency/throughput for the server DPU:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+bash scripts/run_bpt_exp.sh -o ../ae/figure/fig-9/bpt-dpu.csv -b dpu 
+```
+
+## WIP: Comparison with Outback and eRPC (Figure-10) ##
