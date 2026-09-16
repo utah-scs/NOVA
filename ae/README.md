@@ -127,7 +127,7 @@ make -C client
 
 ## Scaling to many functions (Figure-4) ##
 
-To run this experiment run the following command:
+To run this experiment run the following command on the client machine `node1`:
 
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
@@ -146,7 +146,7 @@ After the experiment is finished running generated figure can be found in: `${NO
 
 ### Running BPT on the server host ###
 
-Run the following command on the server host:
+Run the following command on `node0`:
 
 ```
 ./experiments/run_exp.py -e experiments/BPTREE/ -c experiments/BPTREE/bplus-search-naam-host.bess -b experiments/BPTREE/bplus-search-naam.c -j -n 1
