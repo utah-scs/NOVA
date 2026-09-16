@@ -220,10 +220,18 @@ bash scripts/run_bpt_exp.sh -o ../ae/figure/fig-9/bpt-dpu-cache.csv -b dpu_cache
 
 ### (Step 4) Running RDMA BPT ###
 
-Login to `node0` DPU and direct all flow to the host using following commands:
+Stop bessd running on the host server on `node0` run following command:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR
+./bessctl/bessctl daemon stop
+```
+
+Login to `node0` DPU, stop bessd running on DPU and direct all flow to the host using following commands:
 ```
 ssh ubuntu@192.168.100.2
 cd NOVA
+./bessctl/bessctl daemon stop
 ./scripts/switchctl.sh host
 ```
 
