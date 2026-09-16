@@ -86,7 +86,7 @@ echo 8 | sudo tee /sys/kernel/mm/hugepages/hugepages-524288kB/nr_hugepages
 
 **Building NOVA on server host:**
 
-Clone and build NOVA using the following command:
+Clone and build NOVA using the following command on `node0`:
 
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
@@ -98,13 +98,13 @@ bash ./scripts/setup.sh all
 
 **Building NOVA on server DPU:**
 
-Login to DPU:
+Login to `node0` DPU. Run following comman on `node0`:
 
 ```
 ssh ubuntu@192.168.100.2
 ```
 
-Clone and build NOVA using the following command:
+Clone and build NOVA using the following command on DPU:
 ```
 git clone https://github.com/utah-scs/NOVA
 cd NOVA
@@ -146,12 +146,46 @@ After the experiment is finished running generated figure can be found in: `${NO
 
 ### Running BPT on the server host ###
 
-Run the following command on `node0`:
+Run the following command on `node0` to start the server with B+ tree function running:
 
 ```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR
 ./experiments/run_exp.py -e experiments/BPTREE/ -c experiments/BPTREE/bplus-search-naam-host.bess -b experiments/BPTREE/bplus-search-naam.c -j -n 1
 ```
 
-Run the following command on the client to get latency/throughput for the server host:
+Login to `node0` DPU and direct all flow to the server host using following command on `node0`:
+```
+ssh ubuntu@192.168.100.2
+cd NOVA
+./scripts/switchctl.sh host
+exit
+```
+
+Run the following command on the client (`node1`) to get latency/throughput for the server host:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+bash scripts/run_bpt_exp.sh -o ../ae/figure/fig-9/bpt-host.csv -b host
+```
+
+### Running BPT on the DPU ###
+
+Make sure server is already running on the server host(`node0`) from the previous step.
+
+Send B+ tree memory region information to the DPU for DMA. Run following command on `node0`:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR
+./scripts/send_meminfo.sh
+```
+
+Login to `node0` DPU, start B+ tree server functino on DPU and direct all flow to the DPU using following commands:
+```
+ssh ubuntu@192.168.100.2
+cd NOVA
+./scripts/switchctl.sh dpu
+./experiments/run_exp.py -e experiments/BPTREE/ -c experiments/BPTREE/bplus-search-naam-dpu.bess -b experiments/BPTREE/bplus-search-naam.c -j -n 6
+```
 
 ## Comparison with Outback and eRPC (Figure-10) ##
