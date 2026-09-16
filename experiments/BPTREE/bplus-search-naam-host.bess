@@ -28,7 +28,7 @@ CPU_NUMA_ORG = 'even'
 # PCI address of the NIC
 # Provide PCIe Address to dump the memory registration files
 # which is needed to run NAAM programs on DPU
-PCI_ADDR = '17:00.0'
+PCI_ADDR = '0d:00.0'
 
 # Memory access type:
 #   0: Local memory access

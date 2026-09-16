@@ -36,6 +36,7 @@ setup_sys() {
 
   # Install plot packages
   #$SUDO apt install -y python3-pip
+  $SUDO apt install -y python3-pandas
   $SUDO apt install -y python3-matplotlib
 
   if [[ "$vendor" == *"GenuineIntel"* ]]; then
