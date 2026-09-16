@@ -246,7 +246,7 @@ Run the RDMA server on `node0` using following commands:
 ```
 RDMA_DIR=/proj/sandstorm-PG0/eurosys-ae/rdma-bpt
 cd $RDMA_DIR
-numactl --cpunodebind=0 --membind=0 ./server
+numactl --cpunodebind=1 --membind=1 ./server
 ```
 
 From the server run record the address of the root. Find similar line from the terminal:
