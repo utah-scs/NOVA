@@ -7,7 +7,7 @@ import time
 import math
 
 # PMD port ID
-PMD_PORT_ID = 6
+PMD_PORT_ID = 0
 QUEUE_SIZE = 1024
 
 # Numbers of cores to use

@@ -269,7 +269,7 @@ cd $RDMA_DIR
 ./run_exp.sh -o ../NOVA/ae/figure/fig-9/bpt-rdma.csv -b rdma
 ```
 
-Finally run the following command on `node1` to generate the plot from collect data:
+Finally run the following command on `node1` to generate the plot from the collected data:
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
 cd $NOVA_DIR/dnetperf
@@ -278,4 +278,81 @@ python3 scripts/plot_btree.py --dpu ../ae/figure/fig-9/bpt-dpu.csv --dpu-cache .
 
 Generated figure can be found in: `${NOVA_DIR}/ae/figures/fig-9/bpt_tput_lat_small.pdf` and `${NOVA_DIR}/ae/figures/fig-9/bpt_tx_bw_small.pdf`
 
-## WIP: Comparison with Outback and eRPC (Figure-10) ##
+## Comparison with Outback and eRPC (Figure-10) ##
+
+### (Step 1) Getting Host, DPU and combined results ###
+
+Run following commands from `node1`:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+mkdir -p ../ae/figure/fig-10/host
+mkdir -p ../ae/figure/fig-10/dpu
+./scripts/exp_thread_scaling.sh --max-threads 8 --max-miss-pct 10 --pps-max 10000000 --result-dir ../ae/figure/fig-10/host --result-file ../ae/figure/fig-10/thread_scaling_host.csv --num-keys 64000000 --workload A,B,C --key-dist uniform,zipf; ./scripts/exp_thread_scaling.sh --max-threads 8 --max-miss-pct 10 --pps-max 10000000 --result-dir ../ae/figure/fig-10/dpu --result-file ../ae/figure/fig-10/thread_scaling_dpu.csv --num-keys 64000000 --workload A,B,C --key-dist uniform,zipf --dpu-only
+```
+
+### (Step 2) Getting eRPC throughput and latency results ###
+
+Log in to `node0` DPU and set the flow rule to default mode:
+```
+ssh ubuntu@192.168.100.2
+cd NOVA
+./bessctl/bessctl daemon stop
+./scripts/switchctl.sh default
+```
+
+Clone and build eRPC on `node0`:
+
+```
+ERPC_DIR=/proj/sandstorm-PG0/eurosys-ae/eRPC
+git clone https://github.com/aagontuk/erpc-mica $ERPC_DIR
+cd $ERPC_DIR
+mkdir build_mica && cd build_mica
+cmake .. -DPERF=ON -DTRANSPORT=dpdk -DAPP=mica_server
+make -j $(nproc)
+```
+
+Run following commands from `node0`:
+```
+ERPC_DIR=/proj/sandstorm-PG0/eurosys-ae/eRPC
+cd $ERPC_DIR
+./scripts/mica_sweep.sh --grid --num-server-threads 8 --num-keys 64000000 --max-client-threads 32
+  --test-ms 5000 --csv-out ../NOVA/ae/figure/fig-10/erpc.csv
+```
+
+### (Step 3) Getting outback throughput and latency results ###
+
+**Note: Running outback experiment requires 6 r7525 CloudLab nodes with 100 Gbps connectivity. 1 node as the server machine and 5 nodes as clients. But only three is available for the artifact evaluation from CloudLab. So it won't be possible to replicate the full outback line as shown in the paper**
+
+Clone and build outback on `node0`:
+```
+OUTBACK_DIR=/proj/sandstorm-PG0/eurosys-ae/outback
+git clone https://github.com/aagontuk/outback $OUTBACK_DIR
+cd $OUTBACK_DIR
+bash setup-env.sh
+bash build.sh
+```
+
+Install necessary libraries to run outback clinet on `node1`:
+```
+OUTBACK_DIR=/proj/sandstorm-PG0/eurosys-ae/outback
+cd $OUTBACK_DIR
+bash setup-env.sh
+```
+
+Run experiment script on `node0`:
+```
+OUTBACK_DIR=/proj/sandstorm-PG0/eurosys-ae/outback
+cd $OUTBACK_DIR
+mkdir -p ../NOVA/ae/figure/fig-10/outback
+./run-bench.sh --min-server-threads=1 --max-server-threads=8 --client-threads=8,16,32 --client-nodes=node1 --client-nic-idx=3 --server-nic-idx=2 --numa-node=1 --server-addr=10.10.1.1:8888 --results-dir=../NOVA/ae/figure/fig-10/outback/
+```
+
+After getting all the results run the plot script using following command:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+python3 scripts/plot_thread_scaling_facets.py --dpu-host ../ae/figure/fig-10/thread_scaling_host.csv --dpu ../ae/figure/fig-10/thread_scaling_dpu.csv --outback ../ae/figure/fig-10/outback/throughput.csv --erpc ../ae/figure/fig-10/erpc.csv -o ../ae/figure/fig-10/fig-10.pdf
+```
+
+Generated figure can be found in: `${NOVA_DIR}/ae/figures/fig-10/fig-10.pdf`

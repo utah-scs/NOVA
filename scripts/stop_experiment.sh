@@ -10,4 +10,4 @@ BESSCTL="$(realpath "$SCRIPT_DIR/../bessctl/bessctl")"
 "$BESSCTL" daemon stop
 
 # Stop the experiment on the DPU
-ssh ubuntu@192.168.100.2 "~/bess-nm/bessctl/bessctl daemon stop"
+ssh ubuntu@192.168.100.2 "~/NOVA/bessctl/bessctl daemon stop"

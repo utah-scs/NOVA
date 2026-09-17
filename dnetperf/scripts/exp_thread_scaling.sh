@@ -25,8 +25,10 @@
 #   --result-dir DIR     Output directory                      (default: results/thread_scaling_<timestamp>)
 #   --result-file FILE   Append results to this specific CSV file (skips header if file exists)
 #   --num-keys N         Key population size passed to client  (default: client compiled-in default)
-#   --workload W         YCSB workload: A (50r/50w), B (95r/5w), C (100r) (default: B)
-#   --key-dist D         Key distribution: uniform or zipf     (default: uniform)
+#   --workload W         YCSB workload(s), comma-separated: A (50r/50w),
+#                        B (95r/5w), C (100r)                 (default: B)
+#   --key-dist D         Key distribution(s), comma-separated: uniform,zipf
+#                                                              (default: uniform)
 #   --zipf-theta T       Zipf skew exponent in (0,1)           (default: 0.99, only with --key-dist zipf)
 #   --min-threads N      Lowest thread count to test                (default: 1)
 #   --warmup N           Warmup window in seconds; samples discarded (default: 2)
@@ -59,9 +61,9 @@ RESULT_FILE_OVERRIDE=""  # if set, append to this file instead of creating a new
 
 # Fixed client / server parameters
 SERVER_SSH_USER="${SUDO_USER:-${USER}}"
-SERVER_SSH="${SERVER_SSH_USER}@node-0"
-SERVER_IP="10.10.2.1"
-SERVER_MAC="0c:42:a1:a4:89:bc"
+SERVER_SSH="${SERVER_SSH_USER}@node0"
+SERVER_IP="10.10.1.1"
+SERVER_MAC="b8:3f:d2:54:8e:fe"
 SERVER_PORT="10002"
 CLIENT_LCORES="32,33,34,35,36,37,38,39,40,41"
 CLIENT_SOCKET_MEM="128"
@@ -74,7 +76,7 @@ MAX_RETRIES="3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIENT_BIN="${SCRIPT_DIR}/../client/build/client"
 
-BESS_NM_ROOT="/proj/sandstorm-PG0/ashfaq/bess-nm"
+BESS_NM_ROOT="/proj/sandstorm-PG0/eurosys-ae/NOVA"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -116,8 +118,16 @@ else
     RESULT_FILE="${RESULT_DIR}/results.csv"
 fi
 
-# Per-workload subfolder: ycsb{A,B,C}_{uniform,zipf}
-LOG_SUBDIR="${RESULT_DIR}/ycsb${YCSB_WORKLOAD}_${KEY_DIST}"
+# --workload and --key-dist accept comma-separated lists; every combination
+# of workload x key-dist is run in turn. YCSB_WORKLOAD/KEY_DIST are then
+# reused as the "current" single value while iterating (see main()).
+IFS=',' read -ra WORKLOADS <<< "${YCSB_WORKLOAD}"
+IFS=',' read -ra KEY_DISTS <<< "${KEY_DIST}"
+
+# LOG_SUBDIR (per-workload subfolder: ycsb{A,B,C}_{uniform,zipf}) is computed
+# per combination inside main(), once YCSB_WORKLOAD/KEY_DIST are set to the
+# current values in the sweep.
+LOG_SUBDIR=""
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -388,7 +398,8 @@ main() {
     log "  miss_thresh : ${MAX_MISS_PCT}%"
     log "  pps range   : ${PPS_START}..${PPS_MAX}  step ${PPS_STEP}"
     log "  bench_time  : ${BENCH_TIME}s per step"
-    log "  workload    : YCSB-${YCSB_WORKLOAD}  key_dist=${KEY_DIST}$([ "${KEY_DIST}" = zipf ] && echo "  zipf_theta=${ZIPF_THETA}")"
+    log "  workloads   : ${WORKLOADS[*]}"
+    log "  key_dists   : ${KEY_DISTS[*]}$([[ " ${KEY_DISTS[*]} " == *" zipf "* ]] && echo "  zipf_theta=${ZIPF_THETA}")"
     log "  num_keys    : ${NUM_KEYS:-<client default>}"
     log "  warmup      : ${WARMUP}s"
     log "  dpu_only    : ${DPU_ONLY}"
@@ -397,7 +408,6 @@ main() {
 
     mkdir -p "${RESULT_DIR}"
     mkdir -p "$(dirname "${RESULT_FILE}")"
-    mkdir -p "${LOG_SUBDIR}"
     if [[ ! -f "${RESULT_FILE}" ]]; then
         echo "threads,offered_pps,sent_mpps,recv_mpps,missing_mpps,miss_pct,lat_mean_us,lat_p50_us,lat_p99_us,retries,retries_exhausted,workload,key_dist,zipf_theta,num_keys,host_mpps,dpu_mpps" \
             > "${RESULT_FILE}"
@@ -407,28 +417,39 @@ main() {
 
     [[ -x "${CLIENT_BIN}" ]] || die "Client binary not found: ${CLIENT_BIN}"
 
-    local summary=()   # "threads peak_mpps" pairs for the final report
+    local summary=()   # "workload key_dist threads peak_mpps" entries for the final report
 
-    for nthreads in $(seq "${MIN_THREADS}" "${MAX_THREADS}"); do
-        log "========== threads = ${nthreads} =========="
+    for wl in "${WORKLOADS[@]}"; do
+        for kd in "${KEY_DISTS[@]}"; do
+            YCSB_WORKLOAD="${wl}"
+            KEY_DIST="${kd}"
+            LOG_SUBDIR="${RESULT_DIR}/ycsb${YCSB_WORKLOAD}_${KEY_DIST}"
+            mkdir -p "${LOG_SUBDIR}"
 
-        [[ "${DPU_ONLY}" == "false" ]] && start_monitor
-        sweep_load         "${nthreads}"
-        [[ "${DPU_ONLY}" == "false" ]] && stop_monitor
-        [[ "${DPU_ONLY}" == "false" ]] && collect_monitor_log "${nthreads}"
+            log "========== workload = ${YCSB_WORKLOAD}  key_dist = ${KEY_DIST} =========="
 
-        # Record the best recv_mpps for this thread count for the summary
-        local peak
-        peak=$(awk -F, -v t="${nthreads}" \
-            '$1==t { if ($4+0 > max+0) max=$4 } END { print (max=="") ? "0" : max }' \
-            "${RESULT_FILE}")
-        summary+=("threads=${nthreads}  peak_recv=${peak} Mpps")
+            for nthreads in $(seq "${MIN_THREADS}" "${MAX_THREADS}"); do
+                log "========== threads = ${nthreads} =========="
 
-        if [[ ${nthreads} -lt ${MAX_THREADS} ]]; then
-            log "Cooling down for ${COOLDOWN}s before next thread count..."
-            sleep "${COOLDOWN}"
-        fi
-        echo ""
+                [[ "${DPU_ONLY}" == "false" ]] && start_monitor
+                sweep_load         "${nthreads}"
+                [[ "${DPU_ONLY}" == "false" ]] && stop_monitor
+                [[ "${DPU_ONLY}" == "false" ]] && collect_monitor_log "${nthreads}"
+
+                # Record the best recv_mpps for this combination for the summary
+                local peak
+                peak=$(awk -F, -v t="${nthreads}" -v w="${YCSB_WORKLOAD}" -v d="${KEY_DIST}" \
+                    '$1==t && $12==w && $13==d { if ($4+0 > max+0) max=$4 } END { print (max=="") ? "0" : max }' \
+                    "${RESULT_FILE}")
+                summary+=("workload=${YCSB_WORKLOAD}  key_dist=${KEY_DIST}  threads=${nthreads}  peak_recv=${peak} Mpps")
+
+                if [[ ${nthreads} -lt ${MAX_THREADS} ]]; then
+                    log "Cooling down for ${COOLDOWN}s before next thread count..."
+                    sleep "${COOLDOWN}"
+                fi
+                echo ""
+            done
+        done
     done
 
     # ---------------------------------------------------------------------------

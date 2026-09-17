@@ -4,7 +4,7 @@
 # script from client
 
 DPU_HOST="ubuntu@192.168.100.2"
-DPU_DIR="~/bess-nm/scripts"
+DPU_DIR="~/NOVA/scripts"
 SCRIPT="python3 -u monitor_port.py"
 SCRIPT_ARGS="-y -c 7 -w 500 -r 500 -t 30"
 

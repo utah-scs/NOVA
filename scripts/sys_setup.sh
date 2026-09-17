@@ -38,6 +38,7 @@ setup_sys() {
   #$SUDO apt install -y python3-pip
   $SUDO apt install -y python3-pandas
   $SUDO apt install -y python3-matplotlib
+  pip3 install --break-system-packages plotnine
 
   if [[ "$vendor" == *"GenuineIntel"* ]]; then
     # Set scaling governor to performance
