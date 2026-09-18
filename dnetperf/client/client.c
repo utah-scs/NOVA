@@ -1,4 +1,5 @@
 #include <generic/rte_cycles.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <rte_byteorder.h>
 #include <stdbool.h>
@@ -404,6 +405,18 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, unsigned int n_queues)
 
 	}
 
+	rte_eth_dev_info_get(port, &dev_info);
+
+	/* Clamp requested offloads/RSS to what this device actually
+	 * supports (e.g. virtio_user advertises neither IPV4_CKSUM nor
+	 * RSS, unlike the physical NICs this config was tuned for). */
+	port_conf.rxmode.offloads &= dev_info.rx_offload_capa;
+	port_conf.txmode.offloads &= dev_info.tx_offload_capa;
+	if ((dev_info.flow_type_rss_offloads & port_conf.rx_adv_conf.rss_conf.rss_hf) == 0) {
+		port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_NONE;
+		port_conf.rx_adv_conf.rss_conf.rss_hf = 0;
+	}
+
 	/* Configure the Ethernet device. */
 	retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
 	if (retval != 0){
@@ -426,7 +439,6 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, unsigned int n_queues)
 	}
 
 	/* Enable TX offloading */
-	rte_eth_dev_info_get(0, &dev_info);
 	txconf = &dev_info.default_txconf;
 
 	/* Allocate and set up TX queues */
@@ -1378,6 +1390,11 @@ static void compute_queue_port_ranges(void)
  * steers incoming responses to the queue that sent them.
  * The server echoes src<->dst, so responses arrive with dst_port == original
  * src_port. Matching on dst_port routes each response back to the right queue.
+ *
+ * Return 0 on success, -1 on a real validation/creation failure, or 1 if the
+ * device doesn't implement rte_flow at all (e.g. virtio_user) -- in that
+ * case no rules are installed and the caller falls back to running without
+ * hardware queue steering.
  */
 static int setup_flow_rules(uint8_t port)
 {
@@ -1416,7 +1433,13 @@ static int setup_flow_rules(uint8_t port)
 				{ RTE_FLOW_ITEM_TYPE_END,  NULL, NULL, NULL },
 			};
 
-			if (rte_flow_validate(port, &attr, pattern, actions, &error) != 0) {
+			int valid_ret = rte_flow_validate(port, &attr, pattern, actions, &error);
+			if (valid_ret != 0) {
+				if (valid_ret == -ENOTSUP || valid_ret == -ENOSYS) {
+					printf("rte_flow not supported by this device; "
+					       "skipping flow rule installation\n");
+					return 1;
+				}
 				printf("Flow rule validation failed for queue %d (type=%d): %s\n",
 				       q, error.type, error.message ? error.message : "(no message)");
 				return -1;
@@ -1443,7 +1466,13 @@ static int setup_flow_rules(uint8_t port)
 					{ RTE_FLOW_ITEM_TYPE_END,  NULL, NULL, NULL },
 				};
 
-				if (rte_flow_validate(port, &attr, pattern, actions, &error) != 0) {
+				int valid_ret = rte_flow_validate(port, &attr, pattern, actions, &error);
+				if (valid_ret != 0) {
+					if (valid_ret == -ENOTSUP || valid_ret == -ENOSYS) {
+						printf("rte_flow not supported by this device; "
+						       "skipping flow rule installation\n");
+						return 1;
+					}
 					printf("Flow rule validation failed for queue %d port %u (type=%d): %s\n",
 					       q, p, error.type, error.message ? error.message : "(no message)");
 					return -1;
@@ -1482,7 +1511,8 @@ static void teardown_flow_rules(uint8_t port)
  */
 static void do_client(uint8_t port)
 {
-	if (setup_flow_rules(port) != 0)
+	int flow_ret = setup_flow_rules(port);
+	if (flow_ret < 0)
 		rte_exit(EXIT_FAILURE, "Failed to install rte_flow rules\n");
 
 	unsigned lcore_id = rte_lcore_id();
