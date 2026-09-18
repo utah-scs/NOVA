@@ -241,7 +241,7 @@ def monitor_dpu_port():
                 break
 
             if check_loss():
-                if percentage < 10:
+                if percentage < 9:
                     percentage += 1
                     print("{}: DPU -> HOST\tTIME {:6.2f}\tHOST {}%".format(
                         datetime.datetime.now().strftime("%T.%f"),
