@@ -220,6 +220,13 @@ Now run server-side DMA engine for the hashtable on `node0`:
 ./experiments/run_exp.py -e experiments/CLIENT_REG_MULTINODE/ -c experiments/CLIENT_REG_MULTINODE/client_side_naam_mica.bess -n 1
 ```
 
+Set `dpdk_port` to 0 in @dnetperf/client/client.c line 115 and build the client. 
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+make -C client
+```
+
 Now run the client in vdev mode on `node1`:
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
