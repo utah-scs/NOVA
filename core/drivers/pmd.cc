@@ -255,15 +255,15 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     eth_conf.lpbk_mode = 1;
   }
 	
-  if (!(dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)) {
-    return CommandFailure(ENOENT, "Port doesn't support HW timestamp");
-	}
+  //if (!(dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TIMESTAMP)) {
+    //return CommandFailure(ENOENT, "Port doesn't support HW timestamp");
+	//}
 	
-  eth_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_TIMESTAMP;
-	rte_mbuf_dyn_rx_timestamp_register(&hwts_dynfield_offset, NULL);
-	if (hwts_dynfield_offset < 0) {
-    return CommandFailure(-rte_errno, "Failed to register timestamp field");
-	}
+  //eth_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TIMESTAMP;
+	//rte_mbuf_dyn_rx_timestamp_register(&hwts_dynfield_offset, NULL);
+	//if (hwts_dynfield_offset < 0) {
+    //return CommandFailure(-rte_errno, "Failed to register timestamp field");
+	//}
 
   ret = rte_eth_dev_configure(ret_port_id, num_rxq, num_txq, &eth_conf);
   if (ret != 0) {
@@ -345,29 +345,28 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     return CommandFailure(-ret, "rte_eth_dev_start() failed");
   }
 	
-  if (ticks_per_cycle_mult == 0) {
-    uint64_t cycles_base = rte_rdtsc();
-    uint64_t ticks_base;
-    ret = rte_eth_read_clock(ret_port_id, &ticks_base);
-    if (ret != 0) {
-      LOG(WARNING) << "rte_eth_read_clock() not supported (err=" << ret
-                   << "), hardware timestamp calibration disabled";
-      ticks_per_cycle_mult = 1 << TICKS_PER_CYCLE_SHIFT;
-    } else {
-      hw_clock_available_ = true;
-      rte_delay_ms(100);
-      uint64_t cycles = rte_rdtsc();
-      uint64_t ticks;
-      rte_eth_read_clock(ret_port_id, &ticks);
-      uint64_t c_freq = cycles - cycles_base;
-      uint64_t t_freq = ticks - ticks_base;
-      double freq_mult = (double)c_freq / t_freq;
-      LOG(INFO) << "TSC Freq ~= " << c_freq * 10
-                << "\nHW Freq ~= " << t_freq * 10
-                << "\nRatio : " << freq_mult;
-      ticks_per_cycle_mult = (1 << TICKS_PER_CYCLE_SHIFT) / freq_mult;
-    }
-  }
+  //if (ticks_per_cycle_mult  == 0) {
+		//uint64_t cycles_base = rte_rdtsc();
+		//uint64_t ticks_base;
+		//ret = rte_eth_read_clock(ret_port_id, &ticks_base);
+		//if (ret != 0)
+      //return CommandFailure(-ret, "rte_eth_read_clock() failed");
+		//rte_delay_ms(100);
+		//uint64_t cycles = rte_rdtsc();
+		//uint64_t ticks;
+		//rte_eth_read_clock(ret_port_id, &ticks);
+		//uint64_t c_freq = cycles - cycles_base;
+		//uint64_t t_freq = ticks - ticks_base;
+		//double freq_mult = (double)c_freq / t_freq;
+		//LOG(INFO) << "TSC Freq ~= " << c_freq * 10
+				//<< "\nHW Freq ~= " << t_freq * 10
+				//<< "\nRatio : " << freq_mult;
+    
+    /* TSC will be faster than internal ticks so freq_mult is > 0
+		 * We convert the multiplication to an integer shift & mult
+		 */
+		//ticks_per_cycle_mult = (1 << TICKS_PER_CYCLE_SHIFT) / freq_mult;
+	//}
   
   dpdk_port_id_ = ret_port_id;
 

@@ -1,0 +1,40 @@
+# Server with multicore pipeline
+
+import scapy.all as scapy
+import socket
+import os
+import time
+
+# PMD port ID
+PMD_PORT_ID = 3
+
+pmdport::PMDPort(vdev='net_vhost0,iface=/tmp/my_vhost.sock,queues=10', num_inc_q=2, num_out_q=2)
+nicport::PMDPort(port_id=PMD_PORT_ID, num_inc_q=2, num_out_q=2)
+
+bess.add_worker(0, 20)
+
+q_out_vhost::QueueOut(port = pmdport, qid = 0)
+q_inc_vhost::QueueInc(port = pmdport, qid = 0)
+q_out_nic::QueueOut(port = nicport, qid = 0)
+q_inc_nic::QueueInc(port = nicport, qid = 0)
+
+q_inc_vhost.attach_task(wid = 0)
+q_inc_nic.attach_task(wid = 0)
+    
+em::ExactMatch(fields=[{'offset':34, 'num_bytes':2}])
+em.add(fields=[{'value_int':socket.htons(10002)}], gate=0)
+em.set_default_gate(gate=1)
+
+bpf_obj=[]
+nobj = int(os.environ['nobj'])
+for i in range(0, nobj):
+    bpf_obj.append({'bpf_file_path':os.environ['bpf_obj' + str(i)], 'id':i})
+
+ubpf::UBPF(functions=bpf_obj, bpf_enable_jit=True)
+
+q_inc_vhost -> ubpf
+q_inc_nic -> em
+em:0 -> SDSwap() -> ubpf
+#ubpf:0 -> SDSwap() -> q_out_nic
+ubpf:0 -> q_out_nic
+ubpf:1 -> SDSwap() -> q_out_vhost
