@@ -144,9 +144,98 @@ bash scripts/exp_ipipe_scaling.sh -o ../ae/figures/fig-4/
 
 After the experiment is finished running generated figure can be found in: `${NOVA_DIR}/ae/figures/fig-4/func_scaling.pdf`
 
-## WIP: Mitigating Host CPU Interference (Figure-7) ##
+## Mitigating Host CPU Interference (Figure-7) ##
 
-## WIP: The Impact of Placement (Figure-8) ##
+To run this experiment run the following command on the client machine `node1`:
+
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+mkdir -p ../ae/figures/fig-7/
+./scripts/exp_host_interference.sh --result-dir ../ae/figure/fig-7/
+```
+
+Generated figures can be found in `${NOVA_DIR}/ae/figures/fig-7/`
+
+## The Impact of Placement (Figure-8) ##
+
+### (Step 1) Getting latency/throughput for Host ###
+
+Run MICA function on the server host. Run following command on `node0`:
+
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR
+./experiments/run_exp.py -e experiments/MICA_MULTI/ -c experiments/MICA_MULTI/server_simple_host.bess -b experiments/MICA_MULTI/mica-naam.c -j -n 1
+```
+
+Run the client script on `node1`:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+bash scripts/run_ht_exp.sh -o ../ae/figure/fig-8/host.csv -b host
+```
+
+### (Step 2) Getting latency/throughput for Host + NIC ###
+
+Make sure MICA function is running on server host from previous step. Send the host memory information to DPU:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR
+./scripts/send_meminfo.sh
+```
+
+Log in to DPU, run MICA function and start monitoring for automatic offloading on DPU:
+```
+ssh ubuntu@192.168.100.2
+cd NOVA
+./experiments/run_exp.py -e experiments/MICA_MULTI/ -c experiments/MICA_MULTI/server_simple_dpu.bess -b experiments/MICA_MULTI/mica-naam.c -j -n 6
+./scripts/monitor_port.py -y -c 8 -w 500 -r 500 -t 10
+```
+
+Run the client script on `node1`:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+bash scripts/run_ht_exp.sh -o ../ae/figure/fig-8/host_dpu.csv -b host_dpu
+```
+
+### (Step 3) Running MICA in client mode ###
+
+Checkout to one-sided branch and build NOVA on both server and client machine on `node0` and `node1`:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR
+git checkout one-sided
+bash ./scripts/setup.sh all
+```
+
+Now run the MICA function in client machine on `node1`:
+```
+./experiments/run_exp.py -e experiments/CLIENT_REG_MULTINODE/ -c experiments/CLIENT_REG_MULTINODE/test_vhost_ubpf.bess -b experiments/MICA_MULTI/mica-naam.c -j -n 1
+```
+
+Now run server-side DMA engine for the hashtable on `node0`:
+```
+./experiments/run_exp.py -e experiments/CLIENT_REG_MULTINODE/ -c experiments/CLIENT_REG_MULTINODE/client_side_naam_mica.bess -n 1
+```
+
+Now run the client in vdev mode on `node1`:
+```
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+bash scripts/run_ht_exp_vdev.sh -o ../ae/figure/fig-8/client.csv -b client
+```
+
+Run plot script on `node1` to generate the plot:
+```
+git checkout main
+NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+cd $NOVA_DIR/dnetperf
+python3 scripts/plot_function_placement.py -d ../ae/figure/fig-8/
+```
+
+Generated plot can be found in `${NOVA_DIR}/ae/figures/fig-8/fig8_function_placement.pdf`
 
 ## B+tree Performance (Figure-9) ##
 

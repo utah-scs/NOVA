@@ -6,6 +6,12 @@
 #   7(a) host CPU, no interference               -> pkt_data_no_interf.csv
 #   7(b) host CPU, interference, monitoring off   -> pkt_data_interf.csv
 #   7(c) adaptive, interference, monitoring on    -> pkt_data_offload.csv
+#
+# Usage:
+#   ./scripts/exp_host_interference.sh [options]
+#
+# Options:
+#   --result-dir DIR   Output directory for CSVs/plots   (default: results/host_interference)
 
 set -euo pipefail
 
@@ -13,20 +19,24 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Server (host) SSH
-SERVER_SSH="node2"
+SERVER_SSH="node0"
 
 # bess-nm checkout on the host (its $HOME does not contain bess-nm)
-SERVER_BESS_NM="/proj/gluon/ashfaq/bess-nm"
+SERVER_BESS_NM="/proj/sandstorm-PG0/eurosys-ae/NOVA"
+
+# bess-nm checkout on the DPU (relative to the DPU user's $HOME; kept
+# unexpanded here so it's expanded remotely by the DPU's shell)
+DPU_BESS_NM="~/NOVA"
 
 # DPU ssh (reached through the host as a jump host)
 DPU_SSH="ubuntu@192.168.100.2"
 SSH_OPTS="-o StrictHostKeyChecking=no -J ${SERVER_SSH} ${DPU_SSH}"
 
 # Server-side MAC address (for client -M/--server-mac). Update by hand.
-SERVER_MAC="c4:70:bd:a0:59:7e"
+SERVER_MAC="b8:3f:d2:54:8e:fe"
 
 # Client lcores
-LCORES="0,2,4,6"
+LCORES="32,33,34,35"
 
 # Client load: fixed 500 Kpps, 1 function, 30s run
 BENCH_TIME=30
@@ -45,6 +55,27 @@ INTERFERENCE_DURATION=10
 
 RAND_FOLDER="host_interference"
 RESULT_DIR="${SCRIPT_DIR}/results/${RAND_FOLDER}"
+
+usage() {
+	grep '^#   ' "$0" | sed 's/^#   /  /'
+	exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--result-dir) RESULT_DIR=$2; shift 2 ;;
+		-h|--help)    usage ;;
+		*) echo "Unknown option: $1" >&2; exit 1 ;;
+	esac
+done
+
+check_client_bin() {
+	local client_bin="${SCRIPT_DIR}/../client/build/client"
+	if [ ! -x "${client_bin}" ]; then
+		echo "[EXP] ERROR: Client binary not found: ${client_bin}" >&2
+		exit 1
+	fi
+}
 
 check_ssh() {
 	echo "[EXP] Checking SSH access to ${SERVER_SSH} and ${DPU_SSH}"
@@ -68,20 +99,43 @@ create_result_dir() {
 
 set_eswitch_host() {
 	echo "[EXP] Setting e-switch to send traffic to host first"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/scripts; ./switchctl.sh host'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/scripts; ./switchctl.sh host'"
 	echo ""
 }
 
 start_server() {
 	echo "[EXP] Starting server (dma_read_write) on host"
 	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/experiments; ./run_exp.py -c CLIENT_REG_MULTINODE/server_dma_rw_host.bess -b CLIENT_REG_MULTINODE/dma_read_write.c -j'"
+	pin_server_core
 	sleep 5
 	echo ""
 }
 
+# run_exp.py starts bessd without pinning it to a specific CPU: bess.add_worker()
+# only sets BESS's internal worker->core mapping, it does not set the OS
+# thread's affinity, so bessd's poll thread ends up floating wherever the
+# scheduler happens to place it. Pin it explicitly so it actually lands on
+# BESSD_CORE, matching the core gen_interference() competes on.
+# bessd runs as a supervisor/worker pair that both keep the "bessd" comm name
+# (e.g. PID 331909 parent, 331910 child doing the actual polling); pgrep -x
+# matches both, so take the highest PID (the child, deepest in the chain,
+# the one actually busy-polling).
+# Also: the busy-polling worker is its own thread (a different TID from the
+# main "bessd" thread, e.g. shows up as "grpcpp_sync_ser" in ps -T), so
+# pinning only the main TID leaves the real hot loop unpinned. Pin every
+# thread under the process instead.
+pin_server_core() {
+	echo "[EXP] Pinning bessd to core ${BESSD_CORE}"
+	ssh ${SERVER_SSH} "PID=\$(pgrep -x bessd | sort -n | tail -1); for t in /proc/\${PID}/task/*; do sudo taskset -pc ${BESSD_CORE} \$(basename \$t) > /dev/null; done; echo pinned all threads of \$PID" \
+		|| echo "[EXP] WARNING: could not pin bessd to core ${BESSD_CORE}" >&2
+}
+
 stop_server() {
 	echo "[EXP] Stopping server bessd"
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/bessctl; ./bessctl daemon stop'"
+	# May legitimately fail if bessd crashed/hung under interference; don't let
+	# that abort the whole script (set -e) and skip remaining figures/cleanup.
+	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/bessctl; ./bessctl daemon stop'" \
+		|| echo "[EXP] WARNING: stop_server failed (bessd may have crashed); continuing." >&2
 	echo ""
 }
 
@@ -93,14 +147,15 @@ send_meminfo() {
 
 start_server_dpu() {
 	echo "[EXP] Starting server (dma_read_write) on DPU"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm; ./experiments/run_exp.py -e experiments/CLIENT_REG_MULTINODE/ -c experiments/CLIENT_REG_MULTINODE/server_dma_rw_dpu.bess -b experiments/CLIENT_REG_MULTINODE/dma_read_write.c -j'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}; ./experiments/run_exp.py -e experiments/CLIENT_REG_MULTINODE/ -c experiments/CLIENT_REG_MULTINODE/server_dma_rw_dpu.bess -b experiments/CLIENT_REG_MULTINODE/dma_read_write.c -j'"
 	sleep 5
 	echo ""
 }
 
 stop_server_dpu() {
 	echo "[EXP] Stopping DPU server bessd"
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/bessctl; ./bessctl daemon stop'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/bessctl; ./bessctl daemon stop'" \
+		|| echo "[EXP] WARNING: stop_server_dpu failed (bessd may have crashed); continuing." >&2
 	echo ""
 }
 
@@ -125,7 +180,13 @@ gen_interference() {
 	echo "[EXP] Generating ${INTERFERENCE_DURATION}s of interference on host core ${BESSD_CORE}"
 	# timeout intentionally kills gen_interference.sh's infinite loop after
 	# INTERFERENCE_DURATION seconds, so ssh exits 124 here on the expected path.
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/scripts; timeout ${INTERFERENCE_DURATION} taskset -c ${BESSD_CORE} ./gen_interference.sh'" || true
+	#
+	# Plain SCHED_OTHER only gets gen_interference.sh a ~50/50 CFS split with
+	# bessd's poll thread, which bessd's capacity absorbs at this client's
+	# offered rate without any queueing/latency impact. Run it SCHED_FIFO (via
+	# chrt) so it actually preempts bessd's poll loop, like a real noisy
+	# neighbor, instead of just time-sharing the core with it.
+	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/scripts; timeout ${INTERFERENCE_DURATION} sudo chrt -f 99 taskset -c ${BESSD_CORE} ./gen_interference.sh'" || true
 	echo ""
 }
 
@@ -149,7 +210,7 @@ start_monitor_dpu() {
 	echo "[EXP] Starting DPU interference monitor"
 	# See start_monitor_host for why pkill needs its own ssh invocation.
 	ssh ${SSH_OPTS} "pkill -f '[m]onitor_interference_dpu.py'" || true
-	ssh ${SSH_OPTS} "sh -c 'cd ~/bess-nm/scripts; nohup ./monitor_interference_dpu.py > /tmp/monitor_interference_dpu.log 2>&1 &'" || true
+	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/scripts; nohup ./monitor_interference_dpu.py > /tmp/monitor_interference_dpu.log 2>&1 &'" || true
 	echo ""
 }
 
@@ -162,8 +223,11 @@ stop_monitor_dpu() {
 run_fig7a() {
 	echo "[EXP] === Figure 7(a): host CPU, no interference ==="
 	start_server
-	run_client "pkt_data_no_interf.csv"
-	plot_results "pkt_data_no_interf.csv"
+	if run_client "pkt_data_no_interf.csv"; then
+		plot_results "pkt_data_no_interf.csv"
+	else
+		echo "[EXP] WARNING: client failed for fig7a; skipping plot." >&2
+	fi
 	stop_server
 }
 
@@ -178,8 +242,11 @@ run_fig7b() {
 	sleep ${INTERFERENCE_START}
 	gen_interference
 
-	wait ${client_pid}
-	plot_results "pkt_data_interf.csv"
+	if wait ${client_pid}; then
+		plot_results "pkt_data_interf.csv"
+	else
+		echo "[EXP] WARNING: client failed for fig7b; skipping plot." >&2
+	fi
 	stop_server
 }
 
@@ -198,14 +265,18 @@ run_fig7c() {
 	sleep ${INTERFERENCE_START}
 	gen_interference
 
-	wait ${client_pid}
-	plot_results "pkt_data_offload.csv"
+	if wait ${client_pid}; then
+		plot_results "pkt_data_offload.csv"
+	else
+		echo "[EXP] WARNING: client failed for fig7c; skipping plot." >&2
+	fi
 	stop_monitor_host
 	stop_monitor_dpu
 	stop_server_dpu
 	stop_server
 }
 
+check_client_bin
 check_ssh
 create_result_dir
 set_eswitch_host
