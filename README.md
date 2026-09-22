@@ -1,5 +1,7 @@
 # NOVA: A New Framework For Remote Memory Access #
 
+NOVA is a new framework for remote memory access and function offloading. In NOVA, each remote memory operation is an active message: a portable eBPF function packaged with its execution state, which the runtime can suspend mid-call and resume wherever data resides or compute is available, including on a different CPU architecture. The runtime places each message automatically at clients, server-attached SmartNICs, or host CPU cores based on workload and current CPU and network load. For more details please look at our paper.
+
 ## Building NOVA ##
 
 Same on both host and DPU.
