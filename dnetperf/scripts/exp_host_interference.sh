@@ -1,4 +1,4 @@
-#!/bin/bash
+checkout #!/bin/bash
 
 # Script for reproducing Figure 7 from the NOVA paper:
 # host CPU interference and NOVA's adaptive load shifting.
@@ -12,6 +12,7 @@
 #
 # Options:
 #   --result-dir DIR   Output directory for CSVs/plots   (default: results/host_interference)
+#   -d DIR             NOVA directory on the DPU        (default: ~/NOVA)
 
 set -euo pipefail
 
@@ -47,7 +48,7 @@ NFUNC=1
 # The server pipeline is started with the default ncpu=1, and
 # naam_common.py pins worker 0 to core 0 (add_worker(0, 0)), so
 # bessd's poll thread runs on core 0.
-BESSD_CORE=0
+BESSD_CORE=32
 
 # Interference timing (relative to client start)
 INTERFERENCE_START=10
@@ -64,6 +65,7 @@ usage() {
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--result-dir) RESULT_DIR=$2; shift 2 ;;
+		-d)           DPU_BESS_NM=$2; shift 2 ;;
 		-h|--help)    usage ;;
 		*) echo "Unknown option: $1" >&2; exit 1 ;;
 	esac
@@ -100,6 +102,12 @@ create_result_dir() {
 set_eswitch_host() {
 	echo "[EXP] Setting e-switch to send traffic to host first"
 	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/scripts; ./switchctl.sh host'"
+	echo ""
+}
+
+set_eswitch_default() {
+	echo "[EXP] Setting e-switch to default mode"
+	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/scripts; ./switchctl.sh default'"
 	echo ""
 }
 
@@ -284,5 +292,7 @@ set_eswitch_host
 run_fig7a
 run_fig7b
 run_fig7c
+
+set_eswitch_default
 
 echo "[EXP] Done! Results in ${RESULT_DIR}"

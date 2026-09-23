@@ -6,27 +6,27 @@ import os
 import time
 
 # PMD port ID
-PMD_PORT_ID = 1
+PMD_PORT_ID = 2
 
 # Numbers of cores to use
 NUM_CORES = int(os.environ['ncpu'])
 
 # NUMA offset for CPU number
-CPU_NUMA_OFFSET=0
+CPU_NUMA_OFFSET=32
 
 # NUMA cpu organization
 # Are cpus split across numa nodes in a range?
 # Example: 0 - 7 Node 0 and 8 - 15 Node 1
-# CPU_NUMA_ORG = 'linear'
+CPU_NUMA_ORG = 'linear'
 #
 # Or cpus are split in even odd fashion
 # Example: 0,2,4,6 to Node 0
 # 1,3,5,7 to Node 1
 # CPU_NUMA_ORG = 'even' or 'odd'
-CPU_NUMA_ORG = 'even'
+# CPU_NUMA_ORG = 'even'
 
 # PCI address of the NIC
-PCI_ADDR = '17:00.1'
+PCI_ADDR = '81:00.0'
 
 # Memory access type:
 #   0: Local memory access

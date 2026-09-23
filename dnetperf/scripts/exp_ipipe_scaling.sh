@@ -44,9 +44,10 @@ N_ITER=5
 RAND_FOLDER="tenant_scaling"
 
 usage() {
-	echo "Usage: $0 [-o|--output-dir DIR]"
+	echo "Usage: $0 [-o|--output-dir DIR] [-d DIR]"
 	echo ""
 	echo "  -o, --output-dir DIR   Output directory for results (default: ${RAND_FOLDER})"
+	echo "  -d DIR                 NOVA directory on the DPU (default: ${NOVA_DIR_DPU})"
 	echo "  -h, --help             Show this help message"
 }
 
@@ -54,6 +55,10 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-o|--output-dir)
 			RAND_FOLDER="$2"
+			shift 2
+			;;
+		-d)
+			NOVA_DIR_DPU="$2"
 			shift 2
 			;;
 		-h|--help)
@@ -148,6 +153,11 @@ stop_ipipe() {
 set_eswitch_dpu() {
 	echo "[EXP] Setting e-switch to send traffic to DPU"
 	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/scripts; ./switchctl.sh dpu'"
+}
+
+set_eswitch_default() {
+	echo "[EXP] Setting e-switch to send traffic to DPU"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/scripts; ./switchctl.sh default'"
 }
 
 run_exp_lat_tput_naam() {
@@ -301,6 +311,12 @@ run_ipipe() {
 	process_results "ipipe"
 }
 
+set_default() {
+	checkout_naam
+	build_bess
+	set_eswitch_default
+}
+
 # Compare NAAM with small and large number
 # of pre-allocated packet buffers
 # 262144 vs 65536
@@ -324,14 +340,13 @@ compare_naam() {
 
 # Compare NAAM with iPipe
 compare_ipipe() {
-	#run_naam
-	#run_ipipe
+	run_naam
+	run_ipipe
 	generate_plot_func_scale
+  set_default
 }
 
 check_ssh
 check_dpu_dir
 
-#compare_naam
 compare_ipipe
-#generate_plot_func_scale

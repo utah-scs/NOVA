@@ -133,31 +133,39 @@ make -C client
 
 ## Scaling to many functions (Figure-4) ##
 
+**Estimated run time: 2 hours**
+
 To run this experiment run the following command on the client machine `node1`:
 
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
 cd $NOVA_DIR/dnetperf
 mkdir -p ../ae/figures/fig-4/
-bash scripts/exp_ipipe_scaling.sh -o ../ae/figures/fig-4/
+bash scripts/exp_ipipe_scaling.sh -o ../ae/figures/fig-4/ -d $NOVA_DIR_DPU
 ```
 
 After the experiment is finished running generated figure can be found in: `${NOVA_DIR}/ae/figures/fig-4/func_scaling.pdf`
 
 ## Mitigating Host CPU Interference (Figure-7) ##
 
+**Estimated run time: 10 minutes**
+
 To run this experiment run the following command on the client machine `node1`:
 
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
 cd $NOVA_DIR/dnetperf
 mkdir -p ../ae/figures/fig-7/
-./scripts/exp_host_interference.sh --result-dir ../ae/figure/fig-7/
+./scripts/exp_host_interference.sh --result-dir ../ae/figure/fig-7/ -d $NOVA_DIR_DPU
 ```
 
 Generated figures can be found in `${NOVA_DIR}/ae/figures/fig-7/`
 
 ## The Impact of Placement (Figure-8) ##
+
+**Estimated run time: 2 hours**
 
 ### (Step 1) Getting latency/throughput for Host ###
 
@@ -173,6 +181,7 @@ Run the client script on `node1`:
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
 cd $NOVA_DIR/dnetperf
+mkdir -p ../ae/figure/fig-8/
 bash scripts/run_ht_exp.sh -o ../ae/figure/fig-8/host.csv -b host
 ```
 
@@ -188,9 +197,10 @@ cd $NOVA_DIR
 Log in to DPU, run MICA function and start monitoring for automatic offloading on DPU:
 ```
 ssh ubuntu@192.168.100.2
-cd NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
+cd $NOVA_DIR_DPU
 ./experiments/run_exp.py -e experiments/MICA_MULTI/ -c experiments/MICA_MULTI/server_simple_dpu.bess -b experiments/MICA_MULTI/mica-naam.c -j -n 6
-./scripts/monitor_port.py -y -c 8 -w 500 -r 500 -t 10
+./scripts/monitor_port.py -y -c 7 -w 500 -r 500 -t 10
 ```
 
 Run the client script on `node1`:
@@ -246,6 +256,8 @@ Generated plot can be found in `${NOVA_DIR}/ae/figures/fig-8/fig8_function_place
 
 ## B+tree Performance (Figure-9) ##
 
+**Estimated run time: 2 hours**
+
 ### (Step 1) Running BPT on the server host ###
 
 Run the following command on `node0` to start the server with B+ tree function running:
@@ -259,7 +271,8 @@ cd $NOVA_DIR
 Login to `node0` DPU and direct all flow to the server host using following command on `node0`:
 ```
 ssh ubuntu@192.168.100.2
-cd NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
+cd $NOVA_DIR_DPU
 ./scripts/switchctl.sh host
 exit
 ```
@@ -268,6 +281,7 @@ Run the following command on the client (`node1`) to get latency/throughput for 
 ```
 NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
 cd $NOVA_DIR/dnetperf
+mkdir -p ../ae/figure/fig-9/
 bash scripts/run_bpt_exp.sh -o ../ae/figure/fig-9/bpt-host.csv -b host
 ```
 
@@ -285,7 +299,8 @@ cd $NOVA_DIR
 Login to `node0` DPU, start B+ tree server functino on DPU and direct all flow to the DPU using following commands:
 ```
 ssh ubuntu@192.168.100.2
-cd NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
+cd $NOVA_DIR_DPU
 ./scripts/switchctl.sh dpu
 ./experiments/run_exp.py -e experiments/BPTREE/ -c experiments/BPTREE/bplus-search-naam-dpu.bess -b experiments/BPTREE/bplus-search-naam.c -j -n 6
 ```
@@ -302,7 +317,8 @@ bash scripts/run_bpt_exp.sh -o ../ae/figure/fig-9/bpt-dpu.csv -b dpu
 Login to `node0` DPU, start B+ tree server functino on DPU as cache and direct all flow to the DPU using following commands:
 ```
 ssh ubuntu@192.168.100.2
-cd NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
+cd $NOVA_DIR_DPU
 ./scripts/switchctl.sh dpu
 ./experiments/run_exp.py -e experiments/BPTREE/ -c experiments/BPTREE/bplus-search-naam-dpu-cache.bess -b experiments/BPTREE/bplus-search-naam.c -j -n 6
 ```
@@ -326,9 +342,10 @@ cd $NOVA_DIR
 Login to `node0` DPU, stop bessd running on DPU and direct all flow to the host using following commands:
 ```
 ssh ubuntu@192.168.100.2
-cd NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
+cd $NOVA_DIR_DPU
 ./bessctl/bessctl daemon stop
-./scripts/switchctl.sh host
+./scripts/switchctl.sh default
 ```
 
 Clone RDMA B+ tree implementation on `node0` (Will be also available on the same directory on `node1`):
@@ -376,6 +393,8 @@ Generated figure can be found in: `${NOVA_DIR}/ae/figures/fig-9/bpt_tput_lat_sma
 
 ## Comparison with Outback and eRPC (Figure-10) ##
 
+**Estimated run time: 1 day**
+
 ### (Step 1) Getting Host, DPU and combined results ###
 
 Run following commands from `node1`:
@@ -392,7 +411,8 @@ mkdir -p ../ae/figure/fig-10/dpu
 Log in to `node0` DPU and set the flow rule to default mode:
 ```
 ssh ubuntu@192.168.100.2
-cd NOVA
+NOVA_DIR_DPU=/home/ubuntu/NOVA
+cd $NOVA_DIR_DPU
 ./bessctl/bessctl daemon stop
 ./scripts/switchctl.sh default
 ```
