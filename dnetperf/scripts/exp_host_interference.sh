@@ -12,6 +12,7 @@
 #
 # Options:
 #   --result-dir DIR   Output directory for CSVs/plots   (default: results/host_interference)
+#   -e DIR             NOVA directory on the host       (default: /proj/sandstorm-PG0/eurosys-ae/NOVA)
 #   -d DIR             NOVA directory on the DPU        (default: ~/NOVA)
 
 set -euo pipefail
@@ -23,11 +24,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 SERVER_SSH="node0"
 
 # bess-nm checkout on the host (its $HOME does not contain bess-nm)
-SERVER_BESS_NM="/proj/sandstorm-PG0/eurosys-ae/NOVA"
+NOVA_DIR_HOST="/proj/sandstorm-PG0/eurosys-ae/NOVA"
 
 # bess-nm checkout on the DPU (relative to the DPU user's $HOME; kept
 # unexpanded here so it's expanded remotely by the DPU's shell)
-DPU_BESS_NM="~/NOVA"
+NOVA_DIR_DPU="~/NOVA"
 
 # DPU ssh (reached through the host as a jump host)
 DPU_SSH="ubuntu@192.168.100.2"
@@ -65,7 +66,8 @@ usage() {
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--result-dir) RESULT_DIR=$2; shift 2 ;;
-		-d)           DPU_BESS_NM=$2; shift 2 ;;
+		-e)           NOVA_DIR_HOST=$2; shift 2 ;;
+		-d)           NOVA_DIR_DPU=$2; shift 2 ;;
 		-h|--help)    usage ;;
 		*) echo "Unknown option: $1" >&2; exit 1 ;;
 	esac
@@ -101,19 +103,19 @@ create_result_dir() {
 
 set_eswitch_host() {
 	echo "[EXP] Setting e-switch to send traffic to host first"
-	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/scripts; ./switchctl.sh host'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/scripts; ./switchctl.sh host'"
 	echo ""
 }
 
 set_eswitch_default() {
 	echo "[EXP] Setting e-switch to default mode"
-	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/scripts; ./switchctl.sh default'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/scripts; ./switchctl.sh default'"
 	echo ""
 }
 
 start_server() {
 	echo "[EXP] Starting server (dma_read_write) on host"
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/experiments; ./run_exp.py -c CLIENT_REG_MULTINODE/server_dma_rw_host.bess -b CLIENT_REG_MULTINODE/dma_read_write.c -j'"
+	ssh ${SERVER_SSH} "sh -c 'cd ${NOVA_DIR_HOST}/experiments; ./run_exp.py -c CLIENT_REG_MULTINODE/server_dma_rw_host.bess -b CLIENT_REG_MULTINODE/dma_read_write.c -j'"
 	pin_server_core
 	sleep 5
 	echo ""
@@ -129,27 +131,27 @@ stop_server() {
 	echo "[EXP] Stopping server bessd"
 	# May legitimately fail if bessd crashed/hung under interference; don't let
 	# that abort the whole script (set -e) and skip remaining figures/cleanup.
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/bessctl; ./bessctl daemon stop'" \
+	ssh ${SERVER_SSH} "sh -c 'cd ${NOVA_DIR_HOST}/bessctl; ./bessctl daemon stop'" \
 		|| echo "[EXP] WARNING: stop_server failed (bessd may have crashed); continuing." >&2
 	echo ""
 }
 
 send_meminfo() {
 	echo "[EXP] Sending memory info to DPU"
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/scripts; ./send_meminfo.sh'"
+	ssh ${SERVER_SSH} "sh -c 'cd ${NOVA_DIR_HOST}/scripts; ./send_meminfo.sh'"
 	echo ""
 }
 
 start_server_dpu() {
 	echo "[EXP] Starting server (dma_read_write) on DPU"
-	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}; ./experiments/run_exp.py -e experiments/CLIENT_REG_MULTINODE/ -c experiments/CLIENT_REG_MULTINODE/server_dma_rw_dpu.bess -b experiments/CLIENT_REG_MULTINODE/dma_read_write.c -j'"
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}; ./experiments/run_exp.py -e experiments/CLIENT_REG_MULTINODE/ -c experiments/CLIENT_REG_MULTINODE/server_dma_rw_dpu.bess -b experiments/CLIENT_REG_MULTINODE/dma_read_write.c -j'"
 	sleep 5
 	echo ""
 }
 
 stop_server_dpu() {
 	echo "[EXP] Stopping DPU server bessd"
-	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/bessctl; ./bessctl daemon stop'" \
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/bessctl; ./bessctl daemon stop'" \
 		|| echo "[EXP] WARNING: stop_server_dpu failed (bessd may have crashed); continuing." >&2
 	echo ""
 }
@@ -173,7 +175,7 @@ plot_results() {
 
 gen_interference() {
 	echo "[EXP] Generating ${INTERFERENCE_DURATION}s of interference on host core ${BESSD_CORE}"
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/scripts; timeout ${INTERFERENCE_DURATION} taskset -c ${BESSD_CORE} ./gen_interference.sh'" || true
+	ssh ${SERVER_SSH} "sh -c 'cd ${NOVA_DIR_HOST}/scripts; timeout ${INTERFERENCE_DURATION} taskset -c ${BESSD_CORE} ./gen_interference.sh'" || true
 	echo ""
 }
 
@@ -184,7 +186,7 @@ start_monitor_host() {
 	# (it contains "monitor_interference_host.py" unbracketed) and kill the
 	# very shell that's supposed to launch the monitor.
 	ssh ${SERVER_SSH} "pkill -f '[m]onitor_interference_host.py'" || true
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/scripts; nohup ./monitor_interference_host.py > /tmp/monitor_interference_host.log 2>&1 &'" || true
+	ssh ${SERVER_SSH} "sh -c 'cd ${NOVA_DIR_HOST}/scripts; nohup ./monitor_interference_host.py > /tmp/monitor_interference_host.log 2>&1 &'" || true
 	echo ""
 }
 
@@ -197,7 +199,7 @@ start_monitor_dpu() {
 	echo "[EXP] Starting DPU interference monitor"
 	# See start_monitor_host for why pkill needs its own ssh invocation.
 	ssh ${SSH_OPTS} "pkill -f '[m]onitor_interference_dpu.py'" || true
-	ssh ${SSH_OPTS} "sh -c 'cd ${DPU_BESS_NM}/scripts; nohup ./monitor_interference_dpu.py > /tmp/monitor_interference_dpu.log 2>&1 &'" || true
+	ssh ${SSH_OPTS} "sh -c 'cd ${NOVA_DIR_DPU}/scripts; nohup ./monitor_interference_dpu.py > /tmp/monitor_interference_dpu.log 2>&1 &'" || true
 	echo ""
 }
 

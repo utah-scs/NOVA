@@ -158,7 +158,7 @@ NOVA_DIR=/proj/sandstorm-PG0/eurosys-ae/NOVA
 NOVA_DIR_DPU=/home/ubuntu/NOVA
 cd $NOVA_DIR/dnetperf
 mkdir -p ../ae/figures/fig-7/
-./scripts/exp_host_interference.sh --result-dir ../ae/figure/fig-7/ -d $NOVA_DIR_DPU
+./scripts/exp_host_interference.sh --result-dir ../ae/figure/fig-7/ -e $NOVA_DIR -d $NOVA_DIR_DPU
 ```
 
 Generated figures can be found in `${NOVA_DIR}/ae/figures/fig-7/`
