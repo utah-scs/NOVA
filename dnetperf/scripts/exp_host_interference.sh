@@ -1,4 +1,4 @@
-checkout #!/bin/bash
+#!/bin/bash
 
 # Script for reproducing Figure 7 from the NOVA paper:
 # host CPU interference and NOVA's adaptive load shifting.
@@ -119,19 +119,6 @@ start_server() {
 	echo ""
 }
 
-# run_exp.py starts bessd without pinning it to a specific CPU: bess.add_worker()
-# only sets BESS's internal worker->core mapping, it does not set the OS
-# thread's affinity, so bessd's poll thread ends up floating wherever the
-# scheduler happens to place it. Pin it explicitly so it actually lands on
-# BESSD_CORE, matching the core gen_interference() competes on.
-# bessd runs as a supervisor/worker pair that both keep the "bessd" comm name
-# (e.g. PID 331909 parent, 331910 child doing the actual polling); pgrep -x
-# matches both, so take the highest PID (the child, deepest in the chain,
-# the one actually busy-polling).
-# Also: the busy-polling worker is its own thread (a different TID from the
-# main "bessd" thread, e.g. shows up as "grpcpp_sync_ser" in ps -T), so
-# pinning only the main TID leaves the real hot loop unpinned. Pin every
-# thread under the process instead.
 pin_server_core() {
 	echo "[EXP] Pinning bessd to core ${BESSD_CORE}"
 	ssh ${SERVER_SSH} "PID=\$(pgrep -x bessd | sort -n | tail -1); for t in /proc/\${PID}/task/*; do sudo taskset -pc ${BESSD_CORE} \$(basename \$t) > /dev/null; done; echo pinned all threads of \$PID" \
@@ -186,15 +173,7 @@ plot_results() {
 
 gen_interference() {
 	echo "[EXP] Generating ${INTERFERENCE_DURATION}s of interference on host core ${BESSD_CORE}"
-	# timeout intentionally kills gen_interference.sh's infinite loop after
-	# INTERFERENCE_DURATION seconds, so ssh exits 124 here on the expected path.
-	#
-	# Plain SCHED_OTHER only gets gen_interference.sh a ~50/50 CFS split with
-	# bessd's poll thread, which bessd's capacity absorbs at this client's
-	# offered rate without any queueing/latency impact. Run it SCHED_FIFO (via
-	# chrt) so it actually preempts bessd's poll loop, like a real noisy
-	# neighbor, instead of just time-sharing the core with it.
-	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/scripts; timeout ${INTERFERENCE_DURATION} sudo chrt -f 99 taskset -c ${BESSD_CORE} ./gen_interference.sh'" || true
+	ssh ${SERVER_SSH} "sh -c 'cd ${SERVER_BESS_NM}/scripts; timeout ${INTERFERENCE_DURATION} taskset -c ${BESSD_CORE} ./gen_interference.sh'" || true
 	echo ""
 }
 
