@@ -51,7 +51,7 @@ SATURATION_EXTRA_POINTS=3
 LOG_FILE="${RESULTS_DIR}/ht_experiment.log"
 rm -f "$LOG_FILE"
 
-echo "bench,pps,avg_tput_mpps,avg_lat_99th" > "$CSV_FILE"
+echo "bench,pps,avg_tput_mpps,avg_lat_99th,avg_lat_median,avg_lat_mean" > "$CSV_FILE"
 
 prev_tput=""
 saturated=false
@@ -64,8 +64,10 @@ while [ $PPS_START -le $PPS_END ]; do
 	done
 	avg_tput=$(cat $LOG_FILE | grep Mpps | grep Received | awk '{total += $5}END{print total/NR}')
 	avg_lat=$(cat $LOG_FILE | grep 99th | awk '{total += $4}END{print total/NR}')
-	echo "Average tput,lat for PPS $PPS_START: $avg_tput, $avg_lat"
-	echo "${BENCH},${PPS_START},${avg_tput},${avg_lat}" >> "$CSV_FILE"
+	avg_lat_median=$(cat $LOG_FILE | grep "^median latency" | awk '{total += $4}END{print total/NR}')
+	avg_lat_mean=$(cat $LOG_FILE | grep "^mean latency" | awk '{total += $4}END{print total/NR}')
+	echo "Average tput,lat(99th,median,mean) for PPS $PPS_START: $avg_tput, $avg_lat, $avg_lat_median, $avg_lat_mean"
+	echo "${BENCH},${PPS_START},${avg_tput},${avg_lat},${avg_lat_median},${avg_lat_mean}" >> "$CSV_FILE"
 	rm "$LOG_FILE"
 
 	if [ -n "$prev_tput" ]; then

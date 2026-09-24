@@ -1,0 +1,73 @@
+# Server with multicore pipeline running the standalone MICA module
+#
+#   queue_inc -> em -> MICA() -> queue_out
+#
+# One MICA() per core; all instances share a single hashtable.
+
+import socket
+import os
+
+# PMD port ID
+PMD_PORT_ID = 2
+
+# Numbers of cores to use
+NUM_CORES = int(os.environ['ncpu'])
+
+# NUMA offset for CPU number
+CPU_NUMA_OFFSET=32
+
+# NUMA cpu organization
+# Are cpus split across numa nodes in a range?
+# Example: 0 - 7 Node 0 and 8 - 15 Node 1
+CPU_NUMA_ORG = 'linear'
+#
+# Or cpus are split in even odd fashion
+# Example: 0,2,4,6 to Node 0
+# 1,3,5,7 to Node 1
+# CPU_NUMA_ORG = 'even' or 'odd'
+# CPU_NUMA_ORG = 'even'
+
+# Size of the keyspace, must match --num-keys of the client
+NUM_KEYS = int(os.environ.get('num_keys', 1000000))
+
+# Destination port for all incoming requests
+DST_PORT_ALL_OP = 10002
+
+# Destination port for mutating operations
+DST_PORT_MUT_OP = 31633
+
+for i in range(0, NUM_CORES):
+    if CPU_NUMA_ORG == 'even':
+        bess.add_worker(i, i * 2)
+    elif CPU_NUMA_ORG == 'odd':
+        bess.add_worker(i, (i * 2) + 1)
+    else:
+        bess.add_worker(i, i + CPU_NUMA_OFFSET)
+
+pmdport::PMDPort(port_id=PMD_PORT_ID, num_inc_q=NUM_CORES, num_out_q=NUM_CORES)
+
+# Create a tx queue for each core
+queue_out = []
+for i in range(0, NUM_CORES):
+    queue_out.append(QueueOut(port=pmdport, qid=i))
+
+# Create an rx queue for each core
+queue_inc = []
+for i in range(0, NUM_CORES):
+    q_in = QueueInc(port=pmdport, qid=i)
+    q_in.attach_task(wid=i)
+    queue_inc.append(q_in)
+
+# Match UDP destination port
+ems = []
+for i in range(0, NUM_CORES):
+    em = ExactMatch(fields=[{'offset':36, 'num_bytes':2}])
+    em.add(fields=[{'value_int':socket.htons(DST_PORT_ALL_OP)}], gate=0)
+    em.add(fields=[{'value_int':socket.htons(DST_PORT_MUT_OP)}], gate=0)
+    em.set_default_gate(gate=1)
+    queue_inc[i] -> em
+    ems.append(em)
+
+# MICA pipeline, the first instance allocates and populates the table
+for i in range(0, NUM_CORES):
+    ems[i]:0 -> MICA(num_keys=NUM_KEYS) -> queue_out[i]

@@ -663,6 +663,20 @@ message MACSwapArg {
 }
 
 /**
+ * The MICA module is a standalone in-memory MICA (mehcached) key-value
+ * hashtable. It parses NAAM KV requests (GET/SET), executes them against a
+ * table shared by all MICA instances in the process, and turns the request
+ * into a reply by swapping the Ethernet/IP/UDP source and destination.
+ * The table is pre-populated with keys [0, num_keys) where value = key + 1.
+ *
+ * __Input Gates__: 1
+ * __Output Gates__: 1
+ */
+message MICAArg {
+  uint64 num_keys = 1; /// Size of the keyspace (number of keys in the table)
+}
+
+/**
  * The measure module tracks latencies, packets per second, and other statistics.
  * It should be paired with a Timestamp module, which attaches a timestamp to packets.
  * The measure module will log how long (in nanoseconds) it has been for each packet it received since it was timestamped.
