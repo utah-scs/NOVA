@@ -6,18 +6,27 @@
 
 # Start the server first then run this script to get tput/latency
 
-# Usage: ./run_bpt_exp.sh -o <output.csv> -b <bench>
+# Usage: ./run_ht_exp.sh -o <output.csv> -b <bench> [-w <key_dist>] [-r]
+#   -w: key distribution passed to the client's --key-dist (default: uniform)
+#   -r: append to <output.csv> instead of overwriting it
 
-while getopts "o:b:" opt; do
+USAGE="Usage: $0 -o <output.csv> -b <bench> [-w <key_dist>] [-r]"
+
+KEY_DIST=uniform
+APPEND=false
+
+while getopts "o:b:w:r" opt; do
 	case "$opt" in
 		o) CSV_FILE=$(readlink -f "$OPTARG") ;;
 		b) BENCH="$OPTARG" ;;
-		*) echo "Usage: $0 -o <output.csv> -b <bench>"; exit 1 ;;
+		w) KEY_DIST="$OPTARG" ;;
+		r) APPEND=true ;;
+		*) echo "$USAGE"; exit 1 ;;
 	esac
 done
 
 if [ -z "$CSV_FILE" ] || [ -z "$BENCH" ]; then
-	echo "Usage: $0 -o <output.csv> -b <bench>"
+	echo "$USAGE"
 	exit 1
 fi
 
@@ -51,7 +60,18 @@ SATURATION_EXTRA_POINTS=3
 LOG_FILE="${RESULTS_DIR}/ht_experiment.log"
 rm -f "$LOG_FILE"
 
-echo "bench,pps,avg_tput_mpps,avg_lat_99th,avg_lat_median,avg_lat_mean" > "$CSV_FILE"
+CSV_HEADER="bench,dist,pps,avg_tput_mpps,avg_lat_99th,avg_lat_median,avg_lat_mean"
+
+# With -r, keep existing rows and only write the header if the file is new
+# or empty; refuse to append to a CSV whose columns don't match.
+if $APPEND && [ -s "$CSV_FILE" ]; then
+	if [ "$(head -n 1 "$CSV_FILE")" != "$CSV_HEADER" ]; then
+		echo "Error: header of $CSV_FILE does not match '$CSV_HEADER', cannot append"
+		exit 1
+	fi
+else
+	echo "$CSV_HEADER" > "$CSV_FILE"
+fi
 
 prev_tput=""
 saturated=false
@@ -60,14 +80,14 @@ extra_points=0
 while [ $PPS_START -le $PPS_END ]; do
 	echo "Running experiment with PPS: $PPS_START"
 	for i in $(seq 1 $NUM_ITER); do
-		sudo "$CLIENT_BIN" -l $LCORES -- -s 192.168.1.2 -M "$SERVER_MAC" -p 10002 -t 10 -T ht --workload C --key-dist uniform -b 32 -n 1 -m fixed -r $PPS_START --src-port-start 1234 --src-port-end 1243 &>> "$LOG_FILE"
+		sudo "$CLIENT_BIN" -l $LCORES -- -s 192.168.1.2 -M "$SERVER_MAC" -p 10002 -t 10 -T ht --workload C --key-dist "$KEY_DIST" -b 32 -n 1 -m fixed -r $PPS_START --src-port-start 1234 --src-port-end 1243 &>> "$LOG_FILE"
 	done
 	avg_tput=$(cat $LOG_FILE | grep Mpps | grep Received | awk '{total += $5}END{print total/NR}')
 	avg_lat=$(cat $LOG_FILE | grep 99th | awk '{total += $4}END{print total/NR}')
 	avg_lat_median=$(cat $LOG_FILE | grep "^median latency" | awk '{total += $4}END{print total/NR}')
 	avg_lat_mean=$(cat $LOG_FILE | grep "^mean latency" | awk '{total += $4}END{print total/NR}')
 	echo "Average tput,lat(99th,median,mean) for PPS $PPS_START: $avg_tput, $avg_lat, $avg_lat_median, $avg_lat_mean"
-	echo "${BENCH},${PPS_START},${avg_tput},${avg_lat},${avg_lat_median},${avg_lat_mean}" >> "$CSV_FILE"
+	echo "${BENCH},${KEY_DIST},${PPS_START},${avg_tput},${avg_lat},${avg_lat_median},${avg_lat_mean}" >> "$CSV_FILE"
 	rm "$LOG_FILE"
 
 	if [ -n "$prev_tput" ]; then

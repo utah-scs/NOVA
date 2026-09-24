@@ -17,18 +17,19 @@ PLOT_HEIGHT = 1.5
 BF2_COLOR = '#e41a1c'  # red
 BF3_COLOR = '#377eb8'  # blue
 
-SMALL_SIZE = 8
-ULTRA_SMALL_SIZE = 6
+# Font sizes match plot_thread_scaling_facets.py
+TITLE_SIZE = 5     # axis titles, legend text
+TEXT_SIZE = 4.5    # tick labels, bar labels
 
-plt.rc('font',  size=SMALL_SIZE)
-plt.rc('axes',  titlesize=SMALL_SIZE)
-plt.rc('axes',  labelsize=SMALL_SIZE)
-plt.rc('xtick', labelsize=SMALL_SIZE)
-plt.rc('ytick', labelsize=SMALL_SIZE)
+plt.rc('font',  size=TEXT_SIZE)
+plt.rc('axes',  titlesize=TITLE_SIZE)
+plt.rc('axes',  labelsize=TITLE_SIZE)
+plt.rc('xtick', labelsize=TEXT_SIZE)
+plt.rc('ytick', labelsize=TEXT_SIZE)
 
 rcParams['axes.spines.right'] = False
 rcParams['axes.spines.top']   = False
-rcParams['legend.fontsize']   = ULTRA_SMALL_SIZE
+rcParams['legend.fontsize']   = TITLE_SIZE
 
 MISS_PCT_THRESHOLD = 5.0  # consider rows below this miss rate as valid operating points
 
@@ -81,8 +82,8 @@ def main():
     bf3_bars = ax.bar(x + bar_width / 2, bf3_vals, bar_width,
                       color=BF3_COLOR, label='BF3')
 
-    ax.bar_label(bf2_bars, fmt='%.2f', fontsize=ULTRA_SMALL_SIZE, padding=1)
-    ax.bar_label(bf3_bars, fmt='%.2f', fontsize=ULTRA_SMALL_SIZE, padding=1)
+    ax.bar_label(bf2_bars, fmt='%.2f', fontsize=TEXT_SIZE, padding=1)
+    ax.bar_label(bf3_bars, fmt='%.2f', fontsize=TEXT_SIZE, padding=1)
 
     ax.set_xlabel(f'YCSB-{args.workload} Key Distribution')
     ax.set_ylabel('Throughput (M op/s)')
